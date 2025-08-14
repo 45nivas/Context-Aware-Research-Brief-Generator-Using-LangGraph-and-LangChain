@@ -86,7 +86,8 @@ class DatabaseManager:
     async def init_db(self):
         """Initialize database tables."""
         async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            # FIX: Use checkfirst=True to prevent errors if tables already exist
+            await conn.run_sync(Base.metadata.create_all, checkfirst=True)
     
     async def get_user_context(self, user_id: str) -> Optional[UserContext]:
         """
@@ -206,4 +207,3 @@ class DatabaseManager:
 
 # Global database manager instance
 db_manager = DatabaseManager()
-# FINAL VERSION
