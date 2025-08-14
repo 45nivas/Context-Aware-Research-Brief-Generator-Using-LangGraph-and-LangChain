@@ -103,7 +103,6 @@ async def planning_node(state: Dict[str, Any]) -> Dict[str, Any]:
         parser = PydanticOutputParser(pydantic_object=ResearchPlan)
         format_instructions = parser.get_format_instructions()
         
-        # FINAL FIX: Simplified the depth levels to reduce API calls and avoid rate limits.
         system_prompt = """You are an expert research strategist. Create a research plan for the given topic.
 
 Consider the research depth level:
@@ -212,7 +211,6 @@ async def content_fetching_node(state: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 content = await fetch_content_free(url)
                 if content and len(content.strip()) > 100:
-                    # FINAL FIX: Added the missing content_length field to match the Pydantic model
                     source_contents.append(SourceContent(
                         url=url, title=source_map.get(url, "Unknown Title"), content=content,
                         fetch_timestamp=datetime.utcnow(), content_type="text/plain",
@@ -344,7 +342,23 @@ async def synthesis_node(state: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(state, GraphState):
             state = GraphState.model_validate(state)
         state.errors.append(f"Synthesis failed: {str(e)}")
-        state.final_brief = FinalBrief(title=f"Research Brief: {state.topic}", executive_summary="Synthesis failed.", key_findings=[], detailed_analysis="", implications="", limitations="", references=[], metadata=BriefMetadata(depth_level=state.depth))
+        # FINAL FIX: Added all required fields to the fallback BriefMetadata
+        state.final_brief = FinalBrief(
+            title=f"Research Brief: {state.topic}",
+            executive_summary="Synthesis failed.",
+            key_findings=[],
+            detailed_analysis="",
+            implications="",
+            limitations="",
+            references=[],
+            metadata=BriefMetadata(
+                research_duration=0,
+                total_sources_found=len(state.search_results),
+                sources_used=0,
+                confidence_score=0.1,
+                depth_level=state.depth
+            )
+        )
     return state.model_dump(mode="json")
 
 
@@ -356,7 +370,23 @@ async def post_processing_node(state: Dict[str, Any]) -> Dict[str, Any]:
         state = GraphState.model_validate(state)
         state.current_step = "post_processing"
         if not state.final_brief:
-            state.final_brief = FinalBrief(title=f"Research Brief: {state.topic}", executive_summary="Workflow failed before synthesis.", key_findings=[], detailed_analysis="", implications="", limitations="", references=[], metadata=BriefMetadata(depth_level=state.depth))
+            # FINAL FIX: Added all required fields to the fallback BriefMetadata
+            state.final_brief = FinalBrief(
+                title=f"Research Brief: {state.topic}",
+                executive_summary="Workflow failed before synthesis.",
+                key_findings=[],
+                detailed_analysis="",
+                implications="",
+                limitations="",
+                references=[],
+                metadata=BriefMetadata(
+                    research_duration=0,
+                    total_sources_found=0,
+                    sources_used=0,
+                    confidence_score=0.1,
+                    depth_level=state.depth
+                )
+            )
         
         brief = state.final_brief
         if not brief.title: brief.title = f"Research Brief: {state.topic}"
@@ -373,7 +403,6 @@ async def post_processing_node(state: Dict[str, Any]) -> Dict[str, Any]:
         brief.metadata.sources_used = len(state.source_summaries)
         brief.metadata.creation_timestamp = end_time
         
-        # FINAL FIX: Convert the Pydantic model to a JSON-serializable dict before saving
         brief_dict_for_db = brief.model_dump(mode='json')
         await db_manager.save_research_brief(brief_dict_for_db, state.user_id, state.topic)
         
