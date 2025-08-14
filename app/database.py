@@ -17,6 +17,7 @@ from sqlalchemy.future import select
 from app.config import config
 from app.models import UserContext
 
+# This Base is used by the init_db.py script to find the tables.
 Base = declarative_base()
 
 # -----------------------------
@@ -47,7 +48,7 @@ class ResearchBriefDB(Base):
     implications = Column(Text, nullable=False)
     limitations = Column(Text, nullable=False)
     references = Column(JSON, nullable=False)
-    brief_metadata = Column(JSON, nullable=False)  # Keep NOT NULL but always set
+    brief_metadata = Column(JSON, nullable=False)
     creation_timestamp = Column(DateTime, default=datetime.utcnow)
 
 # -----------------------------
@@ -67,10 +68,21 @@ class DatabaseManager:
             expire_on_commit=False
         )
 
-    async def init_db(self):
-        """Initialize database tables if they don't exist."""
+    async def init_db_tables(self):
+        """
+        Creates all database tables. This should be run by a separate script,
+        not by the application at startup.
+        """
         async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all, checkfirst=True)
+            await conn.run_sync(Base.metadata.create_all)
+
+    async def init_db(self):
+        """
+        This method is called by the application's startup event.
+        It should NOT create tables to avoid race conditions in multi-worker environments.
+        Table creation is handled by the `init_db.py` script.
+        """
+        pass  # Intentionally left blank.
 
     @staticmethod
     def _row_to_dict(row_obj) -> Dict[str, Any]:
@@ -93,7 +105,6 @@ class DatabaseManager:
         import uuid
         brief_id = str(uuid.uuid4())
 
-        # Ensure brief_metadata is always present
         if "brief_metadata" not in brief or not brief["brief_metadata"]:
             brief["brief_metadata"] = {
                 "creation_timestamp": datetime.utcnow().isoformat(),
@@ -141,12 +152,16 @@ class DatabaseManager:
                     )
 
                 if topic not in db_context.previous_topics:
-                    db_context.previous_topics.append(topic)
-                    db_context.previous_topics = db_context.previous_topics[-20:]
+                    # Create a mutable copy before appending
+                    new_topics = list(db_context.previous_topics)
+                    new_topics.append(topic)
+                    db_context.previous_topics = new_topics[-20:]
 
-                db_context.brief_summaries.append(brief_summary)
-                db_context.brief_summaries = db_context.brief_summaries[-10:]
-
+                # Create a mutable copy before appending
+                new_summaries = list(db_context.brief_summaries)
+                new_summaries.append(brief_summary)
+                db_context.brief_summaries = new_summaries[-10:]
+                
                 db_context.last_updated = datetime.utcnow()
                 await session.merge(db_context)
 
