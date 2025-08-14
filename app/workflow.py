@@ -24,31 +24,6 @@ from app.config import config
 from app.llm_tools_free import llm_manager
 
 
-# LangGraph TypedDict for state (required for proper graph execution)
-class WorkflowState(TypedDict):
-    """TypedDict state for LangGraph workflow execution."""
-    # Input parameters
-    topic: str
-    depth: int  # DepthLevel enum value
-    follow_up: bool
-    user_id: str
-    context: Optional[str]
-    
-    # Workflow state
-    user_context: Optional[Dict[str, Any]]
-    research_plan: Optional[Dict[str, Any]]
-    search_results: List[Dict[str, Any]]
-    source_contents: List[Dict[str, Any]]
-    source_summaries: List[Dict[str, Any]]
-    final_brief: Optional[Dict[str, Any]]
-    
-    # Execution metadata
-    start_time: str  # ISO string
-    current_step: str
-    errors: List[str]
-    retry_count: Dict[str, int]
-
-
 class ResearchWorkflow:
     """Main workflow orchestrator using LangGraph."""
     
@@ -60,8 +35,8 @@ class ResearchWorkflow:
     def _build_graph(self):
         """Build the LangGraph workflow."""
         
-        # Create the state graph with TypedDict
-        workflow = StateGraph(WorkflowState)
+        # Create the state graph with Pydantic model
+        workflow = StateGraph(GraphState)
         
         # Add nodes
         workflow.add_node("context_summarization", context_summarization_node)
@@ -170,24 +145,14 @@ class ResearchWorkflow:
         # Reset token usage tracking
         llm_manager.reset_token_usage()
         
-        # Create initial state as dictionary for TypedDict
-        initial_state = {
-            "topic": request.topic,
-            "depth": request.depth.value,  # Convert enum to int
-            "follow_up": request.follow_up,
-            "user_id": request.user_id,
-            "context": request.context,
-            "user_context": None,
-            "research_plan": None,
-            "search_results": [],
-            "source_contents": [],
-            "source_summaries": [],
-            "final_brief": None,
-            "start_time": datetime.utcnow().isoformat(),
-            "current_step": "initialization",
-            "errors": [],
-            "retry_count": {}
-        }
+        # Create initial state
+        initial_state = GraphState(
+            topic=request.topic,
+            depth=request.depth,
+            follow_up=request.follow_up,
+            user_id=request.user_id,
+            context=request.context
+        )
         
         # Configuration for this run
         config_dict = {
@@ -200,11 +165,21 @@ class ResearchWorkflow:
             # Run the workflow
             result = await self.graph.ainvoke(initial_state, config=config_dict)
             
-            # Access final_brief from the result dictionary
-            if hasattr(result, 'get') and result.get('final_brief'):
-                return result['final_brief']
+            # Debug: Log the result type and structure
+            print(f"DEBUG: Result type: {type(result)}")
+            print(f"DEBUG: Result keys: {list(result.keys()) if hasattr(result, 'keys') else 'No keys'}")
+            
+            # Try multiple ways to access final_brief
+            final_brief = None
+            if hasattr(result, 'final_brief') and result.final_brief:
+                final_brief = result.final_brief
+            elif hasattr(result, 'get') and result.get('final_brief'):
+                final_brief = result['final_brief']
             elif 'final_brief' in result and result['final_brief']:
-                return result['final_brief']
+                final_brief = result['final_brief']
+            
+            if final_brief:
+                return final_brief
             else:
                 # Create emergency fallback brief
                 from app.models import BriefMetadata, Reference
