@@ -3,11 +3,11 @@ Database models and operations for storing user context and research briefs.
 Uses SQLAlchemy for ORM and async operations.
 """
 
-import json
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+import uuid
 
-from sqlalchemy import create_engine, Column, String, DateTime, Text, inspect
+from sqlalchemy import Column, String, DateTime, Text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -72,21 +72,10 @@ class DatabaseManager:
     async def init_db(self):
         """
         Initialize database tables if they don't exist.
-        This more robust version inspects the DB first to prevent errors.
+        Uses checkfirst=True to prevent 'already exists' errors.
         """
         async with self.engine.begin() as conn:
-            def _get_table_names(sync_conn):
-                return inspect(sync_conn).get_table_names()
-
-            existing_tables = await conn.run_sync(_get_table_names)
-
-
-            
-            # Create tables that are missing
-            if UserContextDB.__tablename__ not in existing_tables:
-                await conn.run_sync(UserContextDB.__table__.create, checkfirst=True)
-            if ResearchBriefDB.__tablename__ not in existing_tables:
-                await conn.run_sync(ResearchBriefDB.__table__.create, checkfirst=True)
+            await conn.run_sync(Base.metadata.create_all, checkfirst=True)
 
     @staticmethod
     def _row_to_dict(row_obj) -> Dict[str, Any]:
@@ -106,7 +95,6 @@ class DatabaseManager:
 
     async def save_research_brief(self, brief: Dict[str, Any], user_id: str, topic: str) -> str:
         """Save a research brief to the database and return its ID."""
-        import uuid
         brief_id = str(uuid.uuid4())
         async with self.async_session() as session:
             async with session.begin():
@@ -120,7 +108,7 @@ class DatabaseManager:
         return brief_id
 
     async def get_user_briefs(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get a user's previous research briefs (most recent first)."""
+        """Get a user's previous research briefs."""
         async with self.async_session() as session:
             result = await session.execute(
                 select(ResearchBriefDB)
@@ -132,7 +120,7 @@ class DatabaseManager:
             return [self._row_to_dict(r) for r in rows]
 
     async def update_user_context_with_brief(self, user_id: str, topic: str, brief_summary: str) -> None:
-        """Update user context with new brief information in a single transaction."""
+        """Update user context with new brief info."""
         async with self.async_session() as session:
             async with session.begin():
                 db_context = await session.get(UserContextDB, user_id)
@@ -144,15 +132,16 @@ class DatabaseManager:
                         preferences={}
                     )
 
+                # Keep only last 20 topics
                 if topic not in (db_context.previous_topics or []):
                     db_context.previous_topics = (db_context.previous_topics or []) + [topic]
                     db_context.previous_topics = db_context.previous_topics[-20:]
 
+                # Keep only last 10 summaries
                 db_context.brief_summaries = (db_context.brief_summaries or []) + [brief_summary]
                 db_context.brief_summaries = db_context.brief_summaries[-10:]
 
                 db_context.last_updated = datetime.utcnow()
-
                 await session.merge(db_context)
 
 
