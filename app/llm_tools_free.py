@@ -59,22 +59,6 @@ from langchain_core.callbacks import CallbackManagerForToolRun
 from .config import get_config
 from .models import SearchResult, SourceSummary
 
-class DummyLLM(BaseLanguageModel):
-    """A dummy LLM that returns canned responses for grading/demo."""
-    async def ainvoke(self, messages, **kwargs):
-        # Return a plausible, structured brief for any prompt
-        return type("DummyResponse", (), {
-            "content": (
-                "Title: Impact of renewable energy on global economy\n"
-                "Executive Summary: Renewable energy is transforming the global economy by creating jobs, reducing emissions, and driving innovation.\n"
-                "Key Findings: 1. Job creation in renewables. 2. Economic growth in green sectors. 3. Reduced fossil fuel dependence.\n"
-                "Detailed Analysis: Countries investing in renewables see GDP growth, improved public health, and energy security.\n"
-                "Implications: Policymakers should prioritize renewables for sustainable economic development.\n"
-                "Limitations: Data is evolving; long-term impacts require further study.\n"
-            )
-        })()
-
-
 logger = logging.getLogger(__name__)
 
 class FreeLLMManager:
@@ -91,21 +75,18 @@ class FreeLLMManager:
         """Check which LLM services are available."""
         self.available_services = []
 
-        # Check Google Gemini
         if GOOGLE_AVAILABLE and os.getenv("GOOGLE_API_KEY"):
             self.available_services.append("gemini")
             logger.info("✅ Google Gemini available")
         else:
             logger.warning("❌ Google Gemini not available (missing API key or package)")
 
-        # Check OpenAI
         if OPENAI_AVAILABLE and os.getenv("OPENAI_API_KEY"):
             self.available_services.append("openai")
             logger.info("✅ OpenAI available")
         else:
             logger.warning("❌ OpenAI not available (missing API key or package)")
 
-        # Only check Ollama if NOT running on Render
         if OLLAMA_AVAILABLE and not os.getenv("RENDER"):
             try:
                 import requests
@@ -132,10 +113,8 @@ class FreeLLMManager:
                     timeout=120,
                     max_retries=3
                 )
-                logger.info("Initialized Google Gemini Flash")
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini: {e}")
-                return None
         return self._primary_llm
 
     @property
@@ -151,10 +130,8 @@ class FreeLLMManager:
                     timeout=120,
                     max_retries=3
                 )
-                logger.info("Initialized OpenAI GPT-3.5-turbo")
             except Exception as e:
                 logger.error(f"Failed to initialize OpenAI: {e}")
-                return None
         return self._secondary_llm
 
     @property
@@ -162,76 +139,43 @@ class FreeLLMManager:
         """Get the local Ollama LLM (local only)."""
         if self._local_llm is None and "ollama" in self.available_services:
             try:
-                ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-                local_model = os.getenv("LOCAL_MODEL", "llama3.1:8b")
                 self._local_llm = Ollama(
-                    model=local_model,
-                    base_url=ollama_base_url,
+                    model=os.getenv("LOCAL_MODEL", "llama3.1:8b"),
+                    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
                     temperature=0.1,
                     timeout=300,
                 )
-                logger.info(f"Initialized Ollama: {local_model}")
             except Exception as e:
                 logger.error(f"Failed to initialize Ollama: {e}")
         return self._local_llm
     
-    async def generate_with_fallback(self, 
-                                   messages: List[Union[HumanMessage, SystemMessage]], 
-                                   prefer_local: bool = False) -> str:
+    async def generate_with_fallback(self, messages: List[Union[HumanMessage, SystemMessage]], prefer_local: bool = False) -> str:
         """Generate text with fallback between models."""
         models_to_try = []
+        if prefer_local and self.local_llm: models_to_try.append(self.local_llm)
+        if self.primary_llm: models_to_try.append(self.primary_llm)
+        if self.secondary_llm: models_to_try.append(self.secondary_llm)
+        if self.local_llm and not prefer_local: models_to_try.append(self.local_llm)
 
-        # Model selection order: Gemini > OpenAI > Ollama (local only)
-        if prefer_local and self.local_llm:
-            models_to_try = [self.local_llm]
-        else:
-            if self.primary_llm:
-                models_to_try.append(self.primary_llm)
-            if self.secondary_llm:
-                models_to_try.append(self.secondary_llm)
-            if self.local_llm:
-                models_to_try.append(self.local_llm)
-
-        # Filter out None models
         models_to_try = [m for m in models_to_try if m is not None]
-
         if not models_to_try:
-            raise Exception("No LLM models available. Please set up Gemini, OpenAI, or Ollama.")
+            raise Exception("No LLM models available.")
 
-        for i, model in enumerate(models_to_try):
+        for model in models_to_try:
             try:
-                logger.info(f"Attempting generation with model {i+1}/{len(models_to_try)}: {type(model).__name__}")
                 response = await model.ainvoke(messages)
-                if hasattr(response, 'content'):
-                    content = response.content
-                else:
-                    content = str(response)
+                content = response.content if hasattr(response, 'content') else str(response)
                 if content and content.strip():
-                    logger.info(f"Successfully generated response with model {i+1}")
                     return content.strip()
             except Exception as e:
-                logger.warning(f"Model {i+1} failed: {e}")
-                continue
-
-        raise Exception("No models available for text generation")
+                logger.warning(f"Model {type(model).__name__} failed: {e}")
+        raise Exception("All available models failed to generate a response.")
     
-    def reset_token_usage(self):
-        """Reset token usage tracking. Stub implementation for compatibility."""
-        # This is a stub method for compatibility with the original LLMManager
-        # Free models don't have token tracking, so this is a no-op
-        logger.debug("reset_token_usage called (no-op for free models)")
-        pass
-    
-    def get_token_usage(self):
-        """Get token usage tracking. Stub implementation for compatibility."""
-        # This is a stub method for compatibility with the original LLMManager
-        # Free models don't have token tracking, so return empty dict
-        logger.debug("get_token_usage called (returning empty dict for free models)")
-        return {}
-
+    def reset_token_usage(self): pass
+    def get_token_usage(self): return {}
 
 class FreeSearchManager:
-    """Manages free search tools including DuckDuckGo and SerpAPI free tier."""
+    """Manages free search tools."""
     
     def __init__(self):
         self.config = get_config()
@@ -240,423 +184,155 @@ class FreeSearchManager:
         self._check_availability()
     
     def _check_availability(self):
-        """Check which search services are available."""
         self.available_services = []
-        
-        # Check DuckDuckGo
-        if DUCKDUCKGO_AVAILABLE:
-            self.available_services.append("duckduckgo")
-            logger.info("✅ DuckDuckGo search available")
-        else:
-            logger.warning("❌ DuckDuckGo search not available")
-        
-        # Check SerpAPI
-        if SERPAPI_AVAILABLE and os.getenv("SERPAPI_API_KEY"):
-            self.available_services.append("serpapi")
-            logger.info("✅ SerpAPI available (free tier)")
-        else:
-            logger.warning("❌ SerpAPI not available")
-        
-        if not self.available_services:
-            logger.error("❌ No search services available!")
+        if DUCKDUCKGO_AVAILABLE: self.available_services.append("duckduckgo")
+        if SERPAPI_AVAILABLE and os.getenv("SERPAPI_API_KEY"): self.available_services.append("serpapi")
     
     @property
     def duckduckgo_search(self) -> Optional[DDGS]:
-        """Get DuckDuckGo search tool (completely free)."""
         if self._duckduckgo_search is None and "duckduckgo" in self.available_services:
-            try:
-                self._duckduckgo_search = DDGS()
-                logger.info("Initialized DuckDuckGo search")
-            except Exception as e:
-                logger.error(f"Failed to initialize DuckDuckGo: {e}")
+            self._duckduckgo_search = DDGS()
         return self._duckduckgo_search
     
     @property
     def serpapi_search(self) -> Optional[SerpAPIWrapper]:
-        """Get SerpAPI search tool (free tier: 100 searches/month)."""
         if self._serpapi_search is None and "serpapi" in self.available_services:
-            try:
-                self._serpapi_search = SerpAPIWrapper(
-                    serpapi_api_key=os.getenv("SERPAPI_API_KEY"),
-                    params={
-                        "engine": "google",
-                        "gl": "us",
-                        "hl": "en",
-                        "num": 5  # Limit for free tier
-                    }
-                )
-                logger.info("Initialized SerpAPI search")
-            except Exception as e:
-                logger.error(f"Failed to initialize SerpAPI: {e}")
+            self._serpapi_search = SerpAPIWrapper()
         return self._serpapi_search
     
     async def search_with_fallback(self, query: str) -> List[SearchResult]:
-        """Search with fallback between available search tools."""
         search_results = []
-        
-        # Try SerpAPI first if available (better quality results)
         if self.serpapi_search:
             try:
-                logger.info("Searching with SerpAPI")
-                results = self.serpapi_search.run(query)
+                results = await asyncio.to_thread(self.serpapi_search.run, query)
                 search_results.extend(self._parse_serpapi_results(results, query))
-                if search_results:
-                    logger.info(f"SerpAPI returned {len(search_results)} results")
-                    return search_results
+                if search_results: return search_results
             except Exception as e:
                 logger.warning(f"SerpAPI search failed: {e}")
         
-        # Fallback to DuckDuckGo (always available)
         if self.duckduckgo_search:
             try:
-                logger.info("Searching with DuckDuckGo")
-                results = list(self.duckduckgo_search.text(query, max_results=5))
+                # FIX: Use the synchronous `text` method in a separate thread as `atext` might not exist
+                results = await asyncio.to_thread(self.duckduckgo_search.text, query, max_results=5)
                 search_results.extend(self._parse_duckduckgo_results(results, query))
-                logger.info(f"DuckDuckGo returned {len(search_results)} results")
                 return search_results
             except Exception as e:
                 logger.error(f"DuckDuckGo search failed: {e}")
         
-        # If no search works, return empty results with warning
-        logger.warning("All search methods failed, returning empty results")
         return []
     
-    def _parse_serpapi_results(self, results: str, query: str) -> List[SearchResult]:
-        """Parse SerpAPI results."""
+    def _parse_serpapi_results(self, results: Any, query: str) -> List[SearchResult]:
         search_results = []
         try:
-            # SerpAPI returns JSON string
-            data = json.loads(results) if isinstance(results, str) else results
-            
-            organic_results = data.get("organic_results", [])
-            for result in organic_results[:5]:  # Limit for free tier
-                search_result = SearchResult(
-                    title=result.get("title", ""),
-                    url=result.get("link", ""),
-                    snippet=result.get("snippet", ""),
-                    source="serpapi",
-                    relevance_score=0.8,  # High relevance for SerpAPI
-                    search_query=query,
-                    timestamp=datetime.now()
-                )
-                search_results.append(search_result)
+            # FIX: Robustly handle different possible return types from SerpAPI
+            data_to_parse = None
+            if isinstance(results, str):
+                if results.strip().startswith('{'):
+                    data_to_parse = json.loads(results).get("organic_results", [])
+                elif results.strip().startswith('['):
+                    try:
+                        data_to_parse = eval(results)
+                    except:
+                        logger.warning(f"SerpAPI returned a string that could not be evaluated: {results}")
+                        return []
+            elif isinstance(results, dict):
+                data_to_parse = results.get("organic_results", [])
+            elif isinstance(results, list):
+                data_to_parse = results
+
+            if not data_to_parse:
+                return []
+
+            for item in data_to_parse[:5]:
+                if isinstance(item, dict):
+                    search_results.append(SearchResult(
+                        title=item.get("title", ""), url=item.get("link", ""),
+                        snippet=item.get("snippet", ""), source="serpapi",
+                        relevance_score=0.8, search_query=query, timestamp=datetime.now()
+                    ))
+                else:
+                    search_results.append(SearchResult(
+                        title=query, url="", snippet=str(item), source="serpapi",
+                        relevance_score=0.7, search_query=query, timestamp=datetime.now()
+                    ))
         except Exception as e:
             logger.error(f"Error parsing SerpAPI results: {e}")
-        
         return search_results
     
     def _parse_duckduckgo_results(self, results: List[dict], query: str) -> List[SearchResult]:
-        """Parse DuckDuckGo results from the new ddgs package format."""
         search_results = []
         try:
-            # New ddgs package returns list of dictionaries like:
-            # [{'title': '...', 'href': '...', 'body': '...'}, ...]
-            
-            for result in results[:5]:  # Limit results
-                title = result.get('title', '')
-                url = result.get('href', '')
-                snippet = result.get('body', '')
-                
-                if title and url:
-                    search_result = SearchResult(
-                        title=title,
-                        url=url,
-                        snippet=snippet.strip(),
-                        source="duckduckgo",
-                        relevance_score=0.7,  # Good relevance for DDG
-                        search_query=query,
-                        timestamp=datetime.now()
-                    )
-                    search_results.append(search_result)
-                        
+            for result in results[:5]:
+                if result.get('title') and result.get('href'):
+                    search_results.append(SearchResult(
+                        title=result.get('title', ''), url=result.get('href', ''),
+                        snippet=result.get('body', '').strip(), source="duckduckgo",
+                        relevance_score=0.7, search_query=query, timestamp=datetime.now()
+                    ))
         except Exception as e:
             logger.error(f"Error parsing DuckDuckGo results: {e}")
-        
         return search_results
 
-
-# Initialize global managers
-llm_manager = FreeLLMManager()
-search_manager = FreeSearchManager()
-
-
-# Tool implementations
-class FreeWebSearchTool(BaseTool):
-    """Free web search tool using DuckDuckGo and SerpAPI free tier."""
-    
-    name = "free_web_search"
-    description = "Search the web for current information using free search APIs"
-    
-    def _run(self, query: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> List[SearchResult]:
-        """Execute web search synchronously."""
-        return asyncio.run(self._arun(query, run_manager))
-    
-    async def _arun(self, query: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> List[SearchResult]:
-        """Execute web search asynchronously."""
-        try:
-            return await search_manager.search_with_fallback(query)
-        except Exception as e:
-            logger.error(f"Web search failed: {e}")
-            return []
-
-
-class FreeContentFetchTool(BaseTool):
-    """Free content fetching tool for retrieving webpage content."""
-    
-    name = "free_content_fetch"
-    description = "Fetch and extract content from web pages"
-    
-    def _run(self, url: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
-        """Fetch content synchronously."""
-        return asyncio.run(self._arun(url, run_manager))
-    
-    async def _arun(self, url: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
-        """Fetch content asynchronously."""
-        try:
-            timeout = aiohttp.ClientTimeout(total=30)
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            
-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        content = await response.text()
-                        # Basic content cleaning
-                        try:
-                            from bs4 import BeautifulSoup
-                            soup = BeautifulSoup(content, 'html.parser')
-                            
-                            # Remove script and style elements
-                            for script in soup(["script", "style"]):
-                                script.decompose()
-                            
-                            # Get text content
-                            text = soup.get_text()
-                            
-                            # Clean up whitespace
-                            lines = (line.strip() for line in text.splitlines())
-                            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-                            text = ' '.join(chunk for chunk in chunks if chunk)
-                            
-                            # Limit content length
-                            max_content_length = 8000  # Smaller for free tier
-                            if len(text) > max_content_length:
-                                text = text[:max_content_length] + "..."
-                            
-                            return text
-                        except ImportError:
-                            # Fallback without BeautifulSoup
-                            return content[:8000] + "..."
-                    else:
-                        logger.warning(f"Failed to fetch {url}: HTTP {response.status}")
-                        return f"Failed to fetch content: HTTP {response.status}"
-                        
-        except Exception as e:
-            logger.error(f"Error fetching content from {url}: {e}")
-            return f"Error fetching content: {str(e)}"
-
-
-# Tool instances
-web_search_tool = FreeWebSearchTool()
-content_fetch_tool = FreeContentFetchTool()
-
-
-# Helper functions
-async def get_llm_for_task(task_type: str = "general") -> BaseLanguageModel:
-    """Get the appropriate LLM for a specific task type."""
-    if task_type in ["summarization", "extraction"]:
-        # Use faster model for simple tasks
-        return llm_manager.primary_llm
-    elif task_type in ["analysis", "synthesis", "complex"]:
-        # Use more capable model for complex tasks
-        return llm_manager.secondary_llm or llm_manager.primary_llm
-    elif task_type == "local":
-        # Use local model when internet is not available or for privacy
-        return llm_manager.local_llm or llm_manager.primary_llm
-    else:
-        return llm_manager.primary_llm
-
-
-async def generate_text_with_fallback(messages: List[Union[HumanMessage, SystemMessage]], 
-                                    task_type: str = "general",
-                                    prefer_local: bool = False) -> str:
-    """Generate text with automatic fallback between models."""
-    try:
-        logger.debug(f"[generate_text_with_fallback] Messages: {messages}, Prefer local: {prefer_local}")
-        result = await llm_manager.generate_with_fallback(messages, prefer_local=prefer_local)
-        logger.debug(f"[generate_text_with_fallback] Result: {result}")
-        return result
-    except Exception as e:
-        logger.error(f"Text generation failed: {e}")
-        raise
-
-
-async def search_web_free(query: str) -> List[SearchResult]:
-    """Search the web using free search tools."""
-    try:
-        logger.debug(f"[search_web_free] Query: {query}")
-        results = await search_manager.search_with_fallback(query)
-        logger.debug(f"[search_web_free] Results: {results}")
-        return results
-    except Exception as e:
-        logger.error(f"Web search failed: {e}")
-        return []
-
-
-async def fetch_content_free(url: str) -> str:
-    """Fetch web content using free tools."""
-    try:
-        logger.debug(f"[fetch_content_free] URL: {url}")
-        content = await content_fetch_tool._arun(url)
-        logger.debug(f"[fetch_content_free] Content length: {len(content) if content else 0}")
-        return content
-    except Exception as e:
-        logger.error(f"Content fetch failed: {e}")
-        return ""
-
-
-async def summarize_source_free(content: str, query: str) -> SourceSummary:
-    """Summarize source content using free LLMs."""
-    try:
-        logger.debug(f"[summarize_source_free] Query: {query}, Content length: {len(content) if content else 0}")
-        llm = await get_llm_for_task("summarization")
-        prompt = f"""
-        Please summarize the following content in relation to the query: "{query}"
-        
-        Focus on:
-        1. Key information relevant to the query
-        2. Important facts and statistics
-        3. Notable quotes or statements
-        4. Main conclusions or findings
-        
-        Content to summarize:
-        {content[:4000]}...
-        
-        Provide a concise but comprehensive summary in 2-3 paragraphs.
-        """
-        messages = [HumanMessage(content=prompt)]
-        summary = await llm_manager.generate_with_fallback(messages)
-        logger.debug(f"[summarize_source_free] Summary: {summary}")
-        # Extract key quotes (simple extraction)
-        key_quotes = []
-        lines = content.split('\n')
-        for line in lines:
-            if '"' in line and len(line.strip()) > 20 and len(line.strip()) < 200:
-                key_quotes.append(line.strip())
-            if len(key_quotes) >= 3:
-                break
-        logger.debug(f"[summarize_source_free] Key quotes: {key_quotes}")
-        return SourceSummary(
-            summary=summary,
-            key_quotes=key_quotes,
-            relevance_score=0.8,
-            main_topics=query.split()[:5],  # Simple topic extraction
-            word_count=len(summary.split())
-        )
-    except Exception as e:
-        logger.error(f"Source summarization failed: {e}")
-        return SourceSummary(
-            summary=f"Error summarizing content: {str(e)}",
-            key_quotes=[],
-            relevance_score=0.1,
-            main_topics=[],
-            word_count=0
-        )
-
-
-def check_free_services_status():
-    """Check the status of all free services."""
-    status = {
-        "llm_services": [],
-        "search_services": [],
-        "recommendations": []
-    }
-    
-    # Check LLM services
-    if llm_manager.primary_llm:
-        status["llm_services"].append("✅ Google Gemini (Primary)")
-    if llm_manager.secondary_llm:
-        status["llm_services"].append("✅ OpenAI GPT-3.5-turbo (Secondary)")
-    if llm_manager.local_llm:
-        status["llm_services"].append("✅ Ollama (Local)")
-    
-    # Check search services
-    if search_manager.duckduckgo_search:
-        status["search_services"].append("✅ DuckDuckGo (Free)")
-    if search_manager.serpapi_search:
-        status["search_services"].append("✅ SerpAPI (Free Tier)")
-    
-    # Recommendations
-    if not status["llm_services"]:
-        status["recommendations"].append("🔧 Set up Google Gemini API key or install Ollama")
-    if not status["search_services"]:
-        status["recommendations"].append("🔧 Install duckduckgo-search package")
-    
-    return status
-
-
 class ContentFetcher:
-    """Fetches full content from web sources using free methods."""
-    
+    """Fetches full content from web sources."""
     def __init__(self):
-        """Initialize the content fetcher."""
         self.session = None
     
     async def _ensure_session(self):
-        """Ensure aiohttp session is created."""
         if self.session is None:
-            import aiohttp
             self.session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=30.0),
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                }
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
             )
     
     async def fetch_content(self, url: str) -> Optional[str]:
-        """
-        Fetch full content from a URL.
-        
-        Args:
-            url: URL to fetch
-            
-        Returns:
-            Content string or None if failed
-        """
         try:
             await self._ensure_session()
-            
             async with self.session.get(url) as response:
                 response.raise_for_status()
                 content = await response.text()
-                
-                # Basic HTML tag removal for text content
                 import re
+                content = re.sub(r'<script.*?</script>', '', content, flags=re.DOTALL)
+                content = re.sub(r'<style.*?</style>', '', content, flags=re.DOTALL)
                 content = re.sub(r'<[^>]+>', ' ', content)
                 content = re.sub(r'\s+', ' ', content).strip()
-                
                 return content
-                
         except Exception as e:
             logger.error(f"Failed to fetch content from {url}: {e}")
             return None
     
     async def close(self):
-        """Close the HTTP session."""
         if self.session:
             await self.session.close()
             self.session = None
     
     async def _arun(self, url: str) -> str:
-        """LangChain compatible method."""
         content = await self.fetch_content(url)
         return content or ""
 
-
-# Global instances for easy importing
 llm_manager = FreeLLMManager()
 search_manager = FreeSearchManager()
 content_fetcher = ContentFetcher()
 
+async def generate_text_with_fallback(messages: List[Union[HumanMessage, SystemMessage]], **kwargs) -> str:
+    return await llm_manager.generate_with_fallback(messages)
 
+async def search_web_free(query: str) -> List[SearchResult]:
+    return await search_manager.search_with_fallback(query)
+
+async def fetch_content_free(url: str) -> str:
+    return await content_fetcher._arun(url)
+
+async def summarize_source_free(content: str, query: str) -> SourceSummary:
+    try:
+        llm = llm_manager.primary_llm
+        prompt = f"Summarize the following content in relation to the query: '{query}'\n\nContent:\n{content[:4000]}..."
+        messages = [HumanMessage(content=prompt)]
+        summary = await llm_manager.generate_with_fallback(messages)
+        return SourceSummary(
+            summary=summary, key_quotes=[], relevance_score=0.8,
+            main_topics=query.split()[:5], word_count=len(summary.split())
+        )
+    except Exception as e:
+        logger.error(f"Source summarization failed: {e}")
+        return SourceSummary(summary=f"Error: {e}", key_quotes=[], relevance_score=0.1, main_topics=[], word_count=0)
