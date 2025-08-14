@@ -213,6 +213,10 @@ async def content_fetching_node(state: Dict[str, Any]) -> Dict[str, Any]:
         for url in urls_to_fetch[:config.search.max_sources_per_brief]:
             try:
                 content = await fetch_content_free(url)
+                # Skip sources that return forbidden or empty content
+                if content is None or '403' in str(content) or 'Forbidden' in str(content):
+                    logger.info(f"Skipping source due to forbidden or empty content: {url}")
+                    continue
                 if content and len(content.strip()) > 100:
                     source_contents.append(SourceContent(
                         url=url, title=source_map.get(url, "Unknown Title"), content=content,
@@ -220,11 +224,14 @@ async def content_fetching_node(state: Dict[str, Any]) -> Dict[str, Any]:
                         word_count=len(content.split()),
                         content_length=len(content)
                     ))
+                else:
+                    logger.info(f"Skipping source due to insufficient content: {url}")
             except Exception as e:
                 logger.warning(f"Failed to fetch content from {url}: {e}")
         state.source_contents = source_contents
         if not state.source_contents:
-            raise ValueError("Failed to fetch significant content from any sources")
+            logger.error("No significant content fetched from any sources. Workflow will continue with available snippets if possible.")
+            # Do not raise error, allow workflow to continue with snippets if available
     except Exception as e:
         logger.error(f"Content fetching failed: {e}")
         if not isinstance(state, GraphState):
@@ -327,6 +334,9 @@ async def synthesis_node(state: Dict[str, Any]) -> Dict[str, Any]:
             SystemMessage(content=system_prompt.format(format_instructions=format_instructions)),
             HumanMessage(content=human_prompt)
         ]
+        logger.info("--- Sending prompt to LLM for synthesis ---")
+        logger.info(f"System prompt: {system_prompt}")
+        logger.info(f"Human prompt: {human_prompt[:1000]}... (truncated)")
         max_retries = config.node_configs["synthesis"]["max_retries"]
         for attempt in range(max_retries):
             try:
@@ -335,11 +345,13 @@ async def synthesis_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 state.final_brief = brief
                 break
             except Exception as e:
+                logger.error(f"--- LLM synthesis failed on attempt {attempt+1} ---", exc_info=True)
                 if attempt == max_retries - 1:
-                    raise e
+                    state.errors.append(f"Synthesis failed: {e}")
+                    state.final_brief = None
                 await asyncio.sleep(2)
         if not state.final_brief:
-            raise ValueError("Failed to generate final brief after retries")
+            logger.error("Failed to generate final brief after retries.")
     except Exception as e:
         logger.error(f"Synthesis failed: {e}")
         if not isinstance(state, GraphState):
