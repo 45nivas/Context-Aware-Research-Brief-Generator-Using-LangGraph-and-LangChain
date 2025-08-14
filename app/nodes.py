@@ -164,10 +164,13 @@ async def search_node(state: Dict[str, Any]) -> Dict[str, Any]:
         state.current_step = "search"
         if not state.research_plan:
             raise ValueError("No research plan available for search")
-        search_tasks = [
-            search_manager.search_with_fallback(step.query)
-            for step in state.research_plan.steps
-        ]
+        logger.info(f"Search node starting. Available search services: {search_manager.available_services}")
+        for svc in search_manager.available_services:
+            logger.info(f"Search service enabled: {svc}")
+        search_tasks = []
+        for step in state.research_plan.steps:
+            logger.info(f"Preparing search for query: {step.query}")
+            search_tasks.append(search_manager.search_with_fallback(step.query))
         all_search_results = []
         max_concurrent = config.node_configs["search"]["concurrent_queries"]
         for i in range(0, len(search_tasks), max_concurrent):

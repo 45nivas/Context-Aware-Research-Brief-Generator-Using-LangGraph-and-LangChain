@@ -185,8 +185,20 @@ class FreeSearchManager:
     
     def _check_availability(self):
         self.available_services = []
-        if DUCKDUCKGO_AVAILABLE: self.available_services.append("duckduckgo")
-        if SERPAPI_AVAILABLE and os.getenv("SERPAPI_API_KEY"): self.available_services.append("serpapi")
+        logger.info(f"USE_DUCKDUCKGO_SEARCH={os.getenv('USE_DUCKDUCKGO_SEARCH')}")
+        logger.info(f"SERPAPI_API_KEY set: {bool(os.getenv('SERPAPI_API_KEY'))}")
+        logger.info(f"TAVILY_API_KEY set: {bool(os.getenv('TAVILY_API_KEY'))}")
+        if DUCKDUCKGO_AVAILABLE:
+            self.available_services.append("duckduckgo")
+            logger.info("DuckDuckGo search available.")
+        else:
+            logger.warning("DuckDuckGo search NOT available.")
+        if SERPAPI_AVAILABLE and os.getenv("SERPAPI_API_KEY"):
+            self.available_services.append("serpapi")
+            logger.info("SerpAPI search available.")
+        else:
+            logger.warning("SerpAPI search NOT available or missing API key.")
+        logger.info(f"Available search services: {self.available_services}")
     
     @property
     def duckduckgo_search(self) -> Optional[DDGS]:
