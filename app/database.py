@@ -58,7 +58,6 @@ class ResearchBriefDB(Base):
     
     def to_pydantic(self) -> FinalBrief:
         """Convert to Pydantic model."""
-        # Reconstruct metadata
         metadata_dict = self.brief_metadata or {}
         metadata = BriefMetadata(**metadata_dict)
         
@@ -86,85 +85,53 @@ class DatabaseManager:
     async def init_db(self):
         """Initialize database tables."""
         async with self.engine.begin() as conn:
-            # FIX: Use checkfirst=True to prevent errors if tables already exist
+            # FINAL FIX: Use checkfirst=True to prevent errors if tables already exist
             await conn.run_sync(Base.metadata.create_all, checkfirst=True)
     
     async def get_user_context(self, user_id: str) -> Optional[UserContext]:
-        """
-        Retrieve user context from database.
-        
-        Args:
-            user_id: User identifier
-            
-        Returns:
-            UserContext if found, None otherwise
-        """
+        """Retrieve user context from database."""
         async with self.async_session() as session:
             result = await session.get(UserContextDB, user_id)
             return result.to_pydantic() if result else None
     
     async def save_user_context(self, user_context: UserContext) -> None:
-        """
-        Save user context to database.
-        
-        Args:
-            user_context: UserContext to save
-        """
+        """Save user context to database."""
         async with self.async_session() as session:
-            db_context = UserContextDB(
-                user_id=user_context.user_id,
-                previous_topics=user_context.previous_topics,
-                brief_summaries=user_context.brief_summaries,
-                preferences=user_context.preferences,
-                last_updated=user_context.last_updated
-            )
-            await session.merge(db_context)
-            await session.commit()
-    
-    async def save_research_brief(self, brief: FinalBrief, user_id: str, topic: str) -> str:
-        """
-        Save research brief to database.
-        
-        Args:
-            brief: FinalBrief to save
-            user_id: User identifier
-            topic: Research topic
-            
-        Returns:
-            Brief ID
-        """
+            async with session.begin():
+                db_context = UserContextDB(
+                    user_id=user_context.user_id,
+                    previous_topics=user_context.previous_topics,
+                    brief_summaries=user_context.brief_summaries,
+                    preferences=user_context.preferences,
+                    last_updated=user_context.last_updated
+                )
+                await session.merge(db_context)
+
+    async def save_research_brief(self, brief: dict, user_id: str, topic: str) -> str:
+        """Save research brief to database."""
         import uuid
         brief_id = str(uuid.uuid4())
         
         async with self.async_session() as session:
-            db_brief = ResearchBriefDB(
-                id=brief_id,
-                user_id=user_id,
-                topic=topic,
-                title=brief.title,
-                executive_summary=brief.executive_summary,
-                key_findings=brief.key_findings,
-                detailed_analysis=brief.detailed_analysis,
-                implications=brief.implications,
-                limitations=brief.limitations,
-                references=[ref.dict() for ref in brief.references],
-                brief_metadata=brief.metadata.dict()
-            )
-            session.add(db_brief)
-            await session.commit()
-            return brief_id
+            async with session.begin():
+                db_brief = ResearchBriefDB(
+                    id=brief_id,
+                    user_id=user_id,
+                    topic=topic,
+                    title=brief['title'],
+                    executive_summary=brief['executive_summary'],
+                    key_findings=brief['key_findings'],
+                    detailed_analysis=brief['detailed_analysis'],
+                    implications=brief['implications'],
+                    limitations=brief['limitations'],
+                    references=brief['references'],
+                    brief_metadata=brief['metadata']
+                )
+                session.add(db_brief)
+        return brief_id
     
     async def get_user_briefs(self, user_id: str, limit: int = 10) -> List[ResearchBriefDB]:
-        """
-        Get user's previous research briefs.
-        
-        Args:
-            user_id: User identifier
-            limit: Maximum number of briefs to return
-            
-        Returns:
-            List of research briefs
-        """
+        """Get user's previous research briefs."""
         async with self.async_session() as session:
             from sqlalchemy import select
             
@@ -177,33 +144,21 @@ class DatabaseManager:
             return result.scalars().all()
     
     async def update_user_context_with_brief(self, user_id: str, topic: str, brief_summary: str) -> None:
-        """
-        Update user context with new brief information.
-        
-        Args:
-            user_id: User identifier
-            topic: Research topic
-            brief_summary: Summary of the brief
-        """
+        """Update user context with new brief information."""
         context = await self.get_user_context(user_id)
         if not context:
             context = UserContext(user_id=user_id)
         
-        # Add topic if not already present
         if topic not in context.previous_topics:
             context.previous_topics.append(topic)
-            # Keep only last 20 topics
             context.previous_topics = context.previous_topics[-20:]
         
-        # Add brief summary
         context.brief_summaries.append(brief_summary)
-        # Keep only last 10 summaries
         context.brief_summaries = context.brief_summaries[-10:]
         
         context.last_updated = datetime.utcnow()
         
         await self.save_user_context(context)
-
 
 # Global database manager instance
 db_manager = DatabaseManager()
