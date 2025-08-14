@@ -33,3 +33,4 @@ rich>=13.0.0
 
 # Optional: Monitoring (free tier available)
 langsmith>=0.0.80
+gunicorn
