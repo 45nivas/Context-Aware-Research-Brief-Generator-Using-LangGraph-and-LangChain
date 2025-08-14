@@ -483,7 +483,10 @@ async def generate_text_with_fallback(messages: List[Union[HumanMessage, SystemM
                                     prefer_local: bool = False) -> str:
     """Generate text with automatic fallback between models."""
     try:
-        return await llm_manager.generate_with_fallback(messages, prefer_local=prefer_local)
+        logger.debug(f"[generate_text_with_fallback] Messages: {messages}, Prefer local: {prefer_local}")
+        result = await llm_manager.generate_with_fallback(messages, prefer_local=prefer_local)
+        logger.debug(f"[generate_text_with_fallback] Result: {result}")
+        return result
     except Exception as e:
         logger.error(f"Text generation failed: {e}")
         raise
@@ -492,7 +495,10 @@ async def generate_text_with_fallback(messages: List[Union[HumanMessage, SystemM
 async def search_web_free(query: str) -> List[SearchResult]:
     """Search the web using free search tools."""
     try:
-        return await search_manager.search_with_fallback(query)
+        logger.debug(f"[search_web_free] Query: {query}")
+        results = await search_manager.search_with_fallback(query)
+        logger.debug(f"[search_web_free] Results: {results}")
+        return results
     except Exception as e:
         logger.error(f"Web search failed: {e}")
         return []
@@ -501,7 +507,10 @@ async def search_web_free(query: str) -> List[SearchResult]:
 async def fetch_content_free(url: str) -> str:
     """Fetch web content using free tools."""
     try:
-        return await content_fetch_tool._arun(url)
+        logger.debug(f"[fetch_content_free] URL: {url}")
+        content = await content_fetch_tool._arun(url)
+        logger.debug(f"[fetch_content_free] Content length: {len(content) if content else 0}")
+        return content
     except Exception as e:
         logger.error(f"Content fetch failed: {e}")
         return ""
@@ -510,8 +519,8 @@ async def fetch_content_free(url: str) -> str:
 async def summarize_source_free(content: str, query: str) -> SourceSummary:
     """Summarize source content using free LLMs."""
     try:
+        logger.debug(f"[summarize_source_free] Query: {query}, Content length: {len(content) if content else 0}")
         llm = await get_llm_for_task("summarization")
-        
         prompt = f"""
         Please summarize the following content in relation to the query: "{query}"
         
@@ -526,10 +535,9 @@ async def summarize_source_free(content: str, query: str) -> SourceSummary:
         
         Provide a concise but comprehensive summary in 2-3 paragraphs.
         """
-        
         messages = [HumanMessage(content=prompt)]
         summary = await llm_manager.generate_with_fallback(messages)
-        
+        logger.debug(f"[summarize_source_free] Summary: {summary}")
         # Extract key quotes (simple extraction)
         key_quotes = []
         lines = content.split('\n')
@@ -538,7 +546,7 @@ async def summarize_source_free(content: str, query: str) -> SourceSummary:
                 key_quotes.append(line.strip())
             if len(key_quotes) >= 3:
                 break
-        
+        logger.debug(f"[summarize_source_free] Key quotes: {key_quotes}")
         return SourceSummary(
             summary=summary,
             key_quotes=key_quotes,
@@ -546,7 +554,6 @@ async def summarize_source_free(content: str, query: str) -> SourceSummary:
             main_topics=query.split()[:5],  # Simple topic extraction
             word_count=len(summary.split())
         )
-        
     except Exception as e:
         logger.error(f"Source summarization failed: {e}")
         return SourceSummary(
@@ -570,7 +577,7 @@ def check_free_services_status():
     if llm_manager.primary_llm:
         status["llm_services"].append("✅ Google Gemini (Primary)")
     if llm_manager.secondary_llm:
-        status["llm_services"].append("✅ Google Gemini Pro (Secondary)")
+        status["llm_services"].append("✅ OpenAI GPT-3.5-turbo (Secondary)")
     if llm_manager.local_llm:
         status["llm_services"].append("✅ Ollama (Local)")
     
