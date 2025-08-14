@@ -1,4 +1,10 @@
 
+
+<a href="https://context-aware-research-brief-generator-f2se.onrender.com/docs" target="_blank">
+    <img src="https://img.shields.io/badge/View%20API%20Docs-Click%20Here-brightgreen?style=for-the-badge">
+</a>
+
+
 # 🚀 Objective & Problem Statement
 
 **❓ Problem:**
