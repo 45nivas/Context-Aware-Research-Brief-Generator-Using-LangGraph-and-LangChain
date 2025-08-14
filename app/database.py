@@ -53,6 +53,7 @@ class DatabaseManager:
     async def init_db(self):
         """Initialize database tables if they don't exist."""
         async with self.engine.begin() as conn:
+            # FINAL FIX: Use checkfirst=True to prevent errors if tables already exist
             await conn.run_sync(Base.metadata.create_all, checkfirst=True)
     
     async def get_user_context(self, user_id: str) -> Optional[UserContext]:
