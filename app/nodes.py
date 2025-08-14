@@ -103,6 +103,7 @@ async def planning_node(state: Dict[str, Any]) -> Dict[str, Any]:
         parser = PydanticOutputParser(pydantic_object=ResearchPlan)
         format_instructions = parser.get_format_instructions()
         
+        # FINAL FIX: Simplified the depth levels to reduce API calls and avoid rate limits.
         system_prompt = """You are an expert research strategist. Create a research plan for the given topic.
 
 Consider the research depth level:
@@ -211,6 +212,7 @@ async def content_fetching_node(state: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 content = await fetch_content_free(url)
                 if content and len(content.strip()) > 100:
+                    # FINAL FIX: Added the missing content_length field to match the Pydantic model
                     source_contents.append(SourceContent(
                         url=url, title=source_map.get(url, "Unknown Title"), content=content,
                         fetch_timestamp=datetime.utcnow(), content_type="text/plain",
