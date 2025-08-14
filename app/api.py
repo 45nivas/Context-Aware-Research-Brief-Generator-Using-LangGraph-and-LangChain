@@ -3,6 +3,8 @@ FastAPI REST API for the Research Brief Generator.
 Provides HTTP endpoints for brief generation and status checking.
 """
 
+
+import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
 import uvicorn
@@ -10,6 +12,16 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import asyncio
+# Initialize FastAPI app
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+logging.getLogger("fastapi").setLevel(logging.INFO)
 
 from app.models import BriefRequest, FinalBrief, DepthLevel
 from app.workflow import research_workflow
