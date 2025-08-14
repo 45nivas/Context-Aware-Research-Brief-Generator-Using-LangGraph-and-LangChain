@@ -84,12 +84,9 @@ class DatabaseManager:
             
             # Create tables that are missing
             if UserContextDB.__tablename__ not in existing_tables:
-                    
-                    await conn.run_sync(lambda sync_conn: UserContextDB.__table__.create(sync_conn, checkfirst=True))
-            
-
+                await conn.run_sync(UserContextDB.__table__.create, checkfirst=True)
             if ResearchBriefDB.__tablename__ not in existing_tables:
-                    await conn.run_sync(lambda sync_conn: ResearchBriefDB.__table__.create(sync_conn, checkfirst=True))
+                await conn.run_sync(ResearchBriefDB.__table__.create, checkfirst=True)
 
     @staticmethod
     def _row_to_dict(row_obj) -> Dict[str, Any]:
