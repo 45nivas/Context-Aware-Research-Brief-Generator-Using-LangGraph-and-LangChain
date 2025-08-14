@@ -1,0 +1,7 @@
+# Architecture Diagram
+
+This is a placeholder for your architecture diagram. You can use draw.io, tldraw.com, or any diagram tool to create a simple flow:
+
+Client → FastAPI → LangGraph → Tools (Search, Summarization) → LLM → Pydantic Output → API Response
+
+Save your diagram as a PNG and replace this file with the actual image.
