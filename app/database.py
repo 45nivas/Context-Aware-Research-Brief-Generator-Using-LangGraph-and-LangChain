@@ -3,10 +3,11 @@ Database models and operations for storing user context and research briefs.
 Uses SQLAlchemy for ORM and async operations.
 """
 
+import json
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
-from sqlalchemy import Column, String, DateTime, Text, inspect
+from sqlalchemy import create_engine, Column, String, DateTime, Text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -27,7 +28,7 @@ class UserContextDB(Base):
     __tablename__ = "user_contexts"
 
     user_id = Column(String(100), primary_key=True)
-    previous_topics = Column(JSON, default=list)   # stored as TEXT w/ JSON in SQLite
+    previous_topics = Column(JSON, default=list)
     brief_summaries = Column(JSON, default=list)
     preferences = Column(JSON, default=dict)
     last_updated = Column(DateTime, default=datetime.utcnow)
@@ -71,40 +72,27 @@ class DatabaseManager:
     async def init_db(self):
         """
         Initialize database tables if they don't exist.
-        This avoids OperationalError: table already exists
-        by inspecting the DB first and creating only missing tables.
+        This more robust version inspects the DB first to prevent errors.
         """
         async with self.engine.begin() as conn:
-
-            # Get existing tables from the DB using a sync function via run_sync
-            def _get_existing_tables(sync_conn):
+            def _get_table_names(sync_conn):
                 return inspect(sync_conn).get_table_names()
 
-            existing_tables = await conn.run_sync(_get_existing_tables)
+            existing_tables = await conn.run_sync(_get_table_names)
+            
+            # Create tables that are missing
+            if UserContextDB.__tablename__ not in existing_tables:
+                await conn.run_sync(UserContextDB.__table__.create)
+            if ResearchBriefDB.__tablename__ not in existing_tables:
+                await conn.run_sync(ResearchBriefDB.__table__.create)
 
-            missing_tables = []
-            if "user_contexts" not in existing_tables:
-                missing_tables.append(UserContextDB.__table__)
-            if "research_briefs" not in existing_tables:
-                missing_tables.append(ResearchBriefDB.__table__)
-
-            if missing_tables:
-                # Create only the missing ones (checkfirst=True for extra safety)
-                def _create_missing(sync_conn):
-                    for tbl in missing_tables:
-                        tbl.create(bind=sync_conn, checkfirst=True)
-
-                await conn.run_sync(_create_missing)
-
-    # ---------- Utility ----------
     @staticmethod
     def _row_to_dict(row_obj) -> Dict[str, Any]:
-        """Convert a SQLAlchemy ORM row to a plain dict (excluding SA state)."""
+        """Convert a SQLAlchemy ORM row to a plain dict."""
         if row_obj is None:
             return {}
         return {c.name: getattr(row_obj, c.name) for c in row_obj.__table__.columns}
 
-    # ---------- Operations ----------
     async def get_user_context(self, user_id: str) -> Optional[UserContext]:
         """Retrieve user context from the database."""
         async with self.async_session() as session:
@@ -112,7 +100,6 @@ class DatabaseManager:
             if not db_obj:
                 return None
             data = self._row_to_dict(db_obj)
-            # Pydantic model from app.models
             return UserContext.model_validate(data)
 
     async def save_research_brief(self, brief: Dict[str, Any], user_id: str, topic: str) -> str:
@@ -155,18 +142,15 @@ class DatabaseManager:
                         preferences={}
                     )
 
-                # Deduplicate topics, keep only last 20
                 if topic not in (db_context.previous_topics or []):
                     db_context.previous_topics = (db_context.previous_topics or []) + [topic]
                     db_context.previous_topics = db_context.previous_topics[-20:]
 
-                # Append summary, keep only last 10
                 db_context.brief_summaries = (db_context.brief_summaries or []) + [brief_summary]
                 db_context.brief_summaries = db_context.brief_summaries[-10:]
 
                 db_context.last_updated = datetime.utcnow()
 
-                # merge handles both insert (if transient) and update
                 await session.merge(db_context)
 
 
