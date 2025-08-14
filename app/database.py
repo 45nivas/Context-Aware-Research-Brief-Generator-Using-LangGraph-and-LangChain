@@ -3,11 +3,12 @@ Database models and operations for storing user context and research briefs.
 Uses SQLAlchemy for ORM and async operations.
 """
 
+import json
+import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-import uuid
 
-from sqlalchemy import Column, String, DateTime, Text, inspect
+from sqlalchemy import create_engine, Column, String, DateTime, Text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -72,10 +73,21 @@ class DatabaseManager:
     async def init_db(self):
         """
         Initialize database tables if they don't exist.
-        Uses checkfirst=True to prevent 'already exists' errors.
+        Avoids race conditions by checking table existence explicitly.
         """
         async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all, checkfirst=True)
+            def _init(sync_conn):
+                inspector = inspect(sync_conn)
+                existing_tables = inspector.get_table_names()
+                needed_tables = Base.metadata.tables.keys()
+                missing_tables = [
+                    Base.metadata.tables[name] for name in needed_tables
+                    if name not in existing_tables
+                ]
+                if missing_tables:
+                    Base.metadata.create_all(sync_conn, tables=missing_tables)
+
+            await conn.run_sync(_init)
 
     @staticmethod
     def _row_to_dict(row_obj) -> Dict[str, Any]:
@@ -96,6 +108,7 @@ class DatabaseManager:
     async def save_research_brief(self, brief: Dict[str, Any], user_id: str, topic: str) -> str:
         """Save a research brief to the database and return its ID."""
         brief_id = str(uuid.uuid4())
+
         async with self.async_session() as session:
             async with session.begin():
                 db_brief = ResearchBriefDB(
@@ -105,22 +118,15 @@ class DatabaseManager:
                     **brief
                 )
                 session.add(db_brief)
-        return brief_id
 
-    async def get_user_briefs(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get a user's previous research briefs."""
-        async with self.async_session() as session:
-            result = await session.execute(
-                select(ResearchBriefDB)
-                .where(ResearchBriefDB.user_id == user_id)
-                .order_by(ResearchBriefDB.creation_timestamp.desc())
-                .limit(limit)
-            )
-            rows = result.scalars().all()
-            return [self._row_to_dict(r) for r in rows]
+        # Update or create user context
+        brief_summary = {
+            "brief_id": brief_id,
+            "topic": topic,
+            "title": brief.get("title"),
+            "created_at": datetime.utcnow().isoformat()
+        }
 
-    async def update_user_context_with_brief(self, user_id: str, topic: str, brief_summary: str) -> None:
-        """Update user context with new brief info."""
         async with self.async_session() as session:
             async with session.begin():
                 db_context = await session.get(UserContextDB, user_id)
@@ -132,17 +138,18 @@ class DatabaseManager:
                         preferences={}
                     )
 
-                # Keep only last 20 topics
                 if topic not in (db_context.previous_topics or []):
                     db_context.previous_topics = (db_context.previous_topics or []) + [topic]
                     db_context.previous_topics = db_context.previous_topics[-20:]
 
-                # Keep only last 10 summaries
                 db_context.brief_summaries = (db_context.brief_summaries or []) + [brief_summary]
                 db_context.brief_summaries = db_context.brief_summaries[-10:]
 
                 db_context.last_updated = datetime.utcnow()
+
                 await session.merge(db_context)
+
+        return brief_id
 
 
 # Global database manager instance
