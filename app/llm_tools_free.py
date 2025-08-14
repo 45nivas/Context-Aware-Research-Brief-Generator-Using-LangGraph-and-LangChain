@@ -190,6 +190,13 @@ class FreeLLMManager:
                 continue
         
         raise Exception("No models available for text generation")
+    
+    def reset_token_usage(self):
+        """Reset token usage tracking. Stub implementation for compatibility."""
+        # This is a stub method for compatibility with the original LLMManager
+        # Free models don't have token tracking, so this is a no-op
+        logger.debug("reset_token_usage called (no-op for free models)")
+        pass
 
 
 class FreeSearchManager:
