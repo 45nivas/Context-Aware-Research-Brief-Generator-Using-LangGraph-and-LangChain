@@ -206,3 +206,4 @@ class DatabaseManager:
 
 # Global database manager instance
 db_manager = DatabaseManager()
+# FINAL VERSION
