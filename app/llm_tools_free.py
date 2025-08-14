@@ -197,6 +197,13 @@ class FreeLLMManager:
         # Free models don't have token tracking, so this is a no-op
         logger.debug("reset_token_usage called (no-op for free models)")
         pass
+    
+    def get_token_usage(self):
+        """Get token usage tracking. Stub implementation for compatibility."""
+        # This is a stub method for compatibility with the original LLMManager
+        # Free models don't have token tracking, so return empty dict
+        logger.debug("get_token_usage called (returning empty dict for free models)")
+        return {}
 
 
 class FreeSearchManager:

@@ -77,7 +77,7 @@ class BriefMetadata(BaseModel):
     sources_used: int = Field(..., description="Sources actually used in brief")
     confidence_score: float = Field(..., ge=0.0, le=1.0, description="Overall confidence")
     depth_level: DepthLevel = Field(..., description="Research depth level used")
-    token_usage: Dict[str, int] = Field(default_factory=dict, description="Token usage by model")
+    token_usage: Dict[str, Any] = Field(default_factory=dict, description="Token usage by model")
 
 
 class FinalBrief(BaseModel):
