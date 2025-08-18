@@ -122,4 +122,4 @@ class DatabaseManager:
         logger.info(f"Updated context for user {user_id}")
 
 
-db_manager = DatabaseManager()
+db_manager = DatabaseManager() 
