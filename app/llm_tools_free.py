@@ -1,5 +1,5 @@
 """
-FREE LLM and search tools for the Research Brief Generator (updated).
+FREE LLM and search tools for the Research Brief Generator (fixed + Tavily integrated).
 """
 from dotenv import load_dotenv
 load_dotenv()
@@ -29,6 +29,9 @@ from app.models import SourceSummary
 
 logger = logging.getLogger(__name__)
 
+# -------------------------
+# OpenRouter Wrapper
+# -------------------------
 class OpenRouterLLM:
     """Custom LLM wrapper for OpenRouter API."""
     def __init__(self, api_key: str, model: str):
@@ -51,6 +54,9 @@ class OpenRouterLLM:
             return f"Error: {e}"
 
 
+# -------------------------
+# Free LLM Manager
+# -------------------------
 class FreeLLMManager:
     """Manages free LLM models including OpenRouter and Gemini."""
     def __init__(self):
@@ -115,22 +121,32 @@ class FreeLLMManager:
         raise Exception("All available LLM models failed.")
 
 
+# -------------------------
+# Free Search Manager (Tavily first, fallback to Bing/Wikipedia)
+# -------------------------
 class FreeSearchManager:
     """Manages free search tools using Tavily first, fallback to Wikipedia/Bing scraping."""
     async def search_with_fallback(self, query: str, max_results: int = 5) -> List[dict]:
         # ✅ First try Tavily
         if TAVILY_AVAILABLE and os.getenv("TAVILY_API_KEY"):
             try:
+                logger.info("🔎 Using Tavily for search...")
                 search_tool = TavilySearchResults(max_results=max_results)
                 results = await search_tool.ainvoke(query)
+                normalized = []
                 for r in results:
-                    if "content" in r:
-                        r["snippet"] = r.pop("content")
-                return results
+                    normalized.append({
+                        "title": r.get("title", "Untitled Result"),
+                        "url": r.get("url", ""),
+                        "snippet": r.get("content", "")
+                    })
+                if normalized:
+                    return normalized
             except Exception as e:
                 logger.error(f"Tavily search failed: {e}")
 
         # ⚠️ Fallback to Bing/Wikipedia scraping
+        logger.warning("⚠️ Tavily unavailable — falling back to Bing/Wikipedia.")
         urls = [
             f"https://en.wikipedia.org/w/api.php?action=opensearch&limit=1&format=json&search={query}",
             f"https://www.bing.com/search?q={query}"
@@ -152,6 +168,9 @@ class FreeSearchManager:
         return fallback_results
 
 
+# -------------------------
+# Content Fetcher
+# -------------------------
 class ContentFetcher:
     """Fetches and cleans content from web URLs."""
     async def fetch_content(self, url: str) -> Optional[str]:
@@ -159,7 +178,7 @@ class ContentFetcher:
             async with httpx.AsyncClient(timeout=30.0, headers={'User-Agent': 'Mozilla/5.0'}) as client:
                 response = await client.get(url)
                 response.raise_for_status()
-                # ✅ Better cleanup with regex (consider bs4 for improvement)
+                # ✅ Better cleanup with regex
                 content = re.sub(r'<script.*?</script>|<style.*?</style>', '', response.text, flags=re.DOTALL)
                 content = re.sub(r'<[^>]+>', ' ', content)
                 content = re.sub(r'\s+', ' ', content).strip()
@@ -172,13 +191,17 @@ class ContentFetcher:
         pass
 
 
-# === GLOBALS ===
+# -------------------------
+# GLOBALS
+# -------------------------
 llm_manager = FreeLLMManager()
 search_manager = FreeSearchManager()
 content_fetcher = ContentFetcher()
 
 
-# === PUBLIC HELPERS ===
+# -------------------------
+# PUBLIC HELPERS
+# -------------------------
 async def generate_text_with_fallback(messages: List[Union[HumanMessage, SystemMessage]]) -> str:
     return await llm_manager.generate_with_fallback(messages)
 
