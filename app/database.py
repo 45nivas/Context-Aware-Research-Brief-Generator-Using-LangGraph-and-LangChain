@@ -56,7 +56,7 @@ class DatabaseManager:
 
     async def save_brief(self, brief: FinalBrief, user_id: str):
         """Saves a completed research brief to the database."""
-        async with self.get_session() as session:
+        async with await self.get_session() as session:
             db_brief = ResearchBriefDB(
                 user_id=user_id,
                 topic=brief.title,
@@ -68,7 +68,7 @@ class DatabaseManager:
 
     async def get_user_briefs(self, user_id: str, limit: int = 10) -> List[FinalBrief]:
         """Retrieves a list of recent briefs for a user."""
-        async with self.get_session() as session:
+        async with await self.get_session() as session:
             result = await session.execute(
                 select(ResearchBriefDB)
                 .where(ResearchBriefDB.user_id == user_id)
@@ -80,7 +80,7 @@ class DatabaseManager:
 
     async def get_user_context(self, user_id: str) -> Optional[UserContext]:
         """Retrieves the context for a given user."""
-        async with self.get_session() as session:
+        async with await self.get_session() as session:
             result = await session.execute(
                 select(UserContextDB).where(UserContextDB.user_id == user_id)
             )
@@ -91,7 +91,7 @@ class DatabaseManager:
 
     async def update_user_context_with_brief(self, user_id: str, topic: str, summary: str):
         """Updates a user's context with a new brief summary."""
-        async with self.get_session() as session:
+        async with await self.get_session() as session:
             result = await session.execute(
                 select(UserContextDB).where(UserContextDB.user_id == user_id)
             )
