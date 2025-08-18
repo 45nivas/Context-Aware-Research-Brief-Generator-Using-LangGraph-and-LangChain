@@ -110,26 +110,30 @@ class FreeLLMManager:
 class FreeSearchManager:
     """Manages free search tools."""
     async def search_with_fallback(self, query: str, max_results: int = 5) -> List[dict]:
-        if not DUCKDUCKGO_AVAILABLE:
-            logger.error("DuckDuckGo search is not installed. Cannot perform search.")
-            return []
+        """Performs a web search using a direct DuckDuckGo HTML request."""
+        url = "https://html.duckduckgo.com/html/"
+        params = {"q": query}
+        headers = {"User-Agent": "Mozilla/5.0"}
         try:
-            # CORRECT WAY: Instantiate DDGS and run the synchronous text method in a thread
-            ddgs = DDGS()
-            results = await asyncio.to_thread(ddgs.text, query, max_results=max_results)
-            
-            # The ddgs library returns 'href', but our models expect 'url'
-            formatted_results = []
-            for res in results:
-                formatted_results.append({
-                    "title": res.get("title"),
-                    "url": res.get("href"), # Rename key for compatibility
-                    "snippet": res.get("body")
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, data=params, headers=headers)
+                response.raise_for_status()
+
+            # --- Parsing Logic ---
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+            results = []
+            for link in soup.find_all('a', class_='result__a'):
+                if len(results) >= max_results:
+                    break
+                results.append({
+                    "title": link.text,
+                    "url": link['href'],
+                    "snippet": link.find_next('a', class_='result__snippet').text
                 })
-            return formatted_results
-            
+            return results
         except Exception as e:
-            logger.error(f"DuckDuckGo search failed: {e}")
+            logger.error(f"Direct DuckDuckGo search failed: {e}")
             return []
 
 class ContentFetcher:

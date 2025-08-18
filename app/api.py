@@ -149,8 +149,15 @@ async def get_workflow_status(workflow_id: str) -> Dict[str, Any]:
     
     workflow_info = active_workflows[workflow_id]
     
-    if workflow_info.get("status") == "completed":
-        return JSONResponse(content=workflow_info.get("result"))
+    # FIX: Check if the result is a Pydantic model and serialize it correctly
+    if workflow_info.get("status") == "completed" and "result" in workflow_info:
+        result_data = workflow_info["result"]
+        if isinstance(result_data, FinalBrief):
+            # Use Pydantic's model_dump to handle datetime conversion
+            return JSONResponse(content=result_data.model_dump(mode='json'))
+        else:
+            # If it's already a dict (from a failure), return as is
+            return JSONResponse(content=result_data)
 
     return workflow_info
 
