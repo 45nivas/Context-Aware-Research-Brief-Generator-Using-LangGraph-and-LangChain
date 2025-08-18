@@ -101,11 +101,11 @@ class FinalBrief(BaseModel):
 
 class BriefRequest(BaseModel):
     """Request model for brief generation."""
-    topic: str = Field(..., min_length=10, max_length=500, description="Research topic")
-    depth: DepthLevel = Field(default=DepthLevel.STANDARD, description="Research depth level")
-    follow_up: bool = Field(default=False, description="Whether this is a follow-up request")
-    user_id: str = Field(..., min_length=1, max_length=100, description="User identifier")
-    context: Optional[str] = Field(None, description="Additional context from user")
+    topic: str = Field(..., min_length=10, max_length=500, description="Research topic", example="The impact of AI on education")
+    depth: DepthLevel = Field(default=DepthLevel.STANDARD, description="Research depth level (can be integer 1-4 or string: QUICK, STANDARD, COMPREHENSIVE, EXHAUSTIVE)", example="STANDARD")
+    follow_up: bool = Field(default=False, description="Whether this is a follow-up request", example=False)
+    user_id: str = Field(..., min_length=1, max_length=100, description="User identifier", example="testuser123")
+    context: Optional[str] = Field(None, description="Additional context from user", example="Recent trends and challenges")
 
 
 class UserContext(BaseModel):
