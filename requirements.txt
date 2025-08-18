@@ -21,3 +21,4 @@ typer>=0.9.0
 rich>=13.0.0
 langsmith>=0.0.80
 gunicorn
+tavily-python
