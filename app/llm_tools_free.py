@@ -114,12 +114,23 @@ class FreeSearchManager:
             logger.error("DuckDuckGo search is not installed. Cannot perform search.")
             return []
         try:
-            # CORRECT WAY: Instantiate DDGS and call the text method without async with
-            ddgs = DDGS()
+            # CORRECT WAY: Instantiate DDGS and call the text method.
             # Since ddgs.text is synchronous, we run it in a separate thread
             # to avoid blocking the asyncio event loop.
+            ddgs = DDGS()
             results = await asyncio.to_thread(ddgs.text, query, max_results=max_results)
-            return results
+            
+            # The ddgs library returns a list of dictionaries. We need to rename
+            # the 'href' key to 'url' to match our Pydantic model.
+            formatted_results = []
+            for res in results:
+                formatted_results.append({
+                    "title": res.get("title"),
+                    "url": res.get("href"), # Renaming 'href' to 'url'
+                    "snippet": res.get("body")
+                })
+            return formatted_results
+            
         except Exception as e:
             logger.error(f"DuckDuckGo search failed: {e}")
             return []
