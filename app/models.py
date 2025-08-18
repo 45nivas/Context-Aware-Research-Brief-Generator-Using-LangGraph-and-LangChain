@@ -29,8 +29,8 @@ class ResearchPlan(BaseModel):
     """Complete research plan with multiple steps."""
     topic: str = Field(..., description="Main research topic")
     steps: List[ResearchPlanStep] = Field(..., description="List of research steps")
-        estimated_duration: Optional[int] = None
-        depth_level: Optional[DepthLevel] = None
+    estimated_duration: Optional[int] = None
+    depth_level: Optional[DepthLevel] = None
 
 
 class SearchResult(BaseModel):
