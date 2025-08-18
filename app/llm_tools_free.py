@@ -306,5 +306,66 @@ async def summarize_source_free(content: str, query: str) -> SourceSummary:
             main_topics=[],
             word_count=0
         )
+    # In app/llm_tools_free.py
+
+class FreeLLMManager:
+    """Manages free LLM models including OpenRouter and Gemini."""
+    def __init__(self):
+        self.token_counts = {}
+        self._primary_llm = None
+        self._secondary_llm = None
+        self._check_availability()
     
+    def _check_availability(self):
+        self.available_services = []
+        if os.getenv("OPENROUTER_API_KEY"):
+            self.available_services.append("openrouter")
+            logger.info("✅ OpenRouter is available.")
+        else:
+            logger.warning("❌ OpenRouter not available (missing OPENROUTER_API_KEY).")
+
+        if GOOGLE_AVAILABLE and os.getenv("GOOGLE_API_KEY"):
+            self.available_services.append("gemini")
+            logger.info("✅ Google Gemini is available.")
+        else:
+            logger.warning("❌ Google Gemini not available (missing GOOGLE_API_KEY or package).")
+            
+    def reset_token_usage(self):
+        """Resets the token usage counter for a new run."""
+        self.token_counts = {"total_tokens": 0}
+
+    def get_token_usage(self) -> Dict[str, int]:
+        """Gets the current token usage."""
+        return self.token_counts
+
+    @property
+    def primary_llm(self) -> Optional[OpenRouterLLM]:
+        if self._primary_llm is None and "openrouter" in self.available_services:
+            self._primary_llm = OpenRouterLLM(api_key=os.getenv("OPENROUTER_API_KEY"), model=os.getenv("OPENROUTER_MODEL", "mistralai/mistral-7b-instruct"))
+        return self._primary_llm
+
+    @property
+    def secondary_llm(self) -> Optional[BaseLanguageModel]:
+        if self._secondary_llm is None and "gemini" in self.available_services:
+            self._secondary_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=os.getenv("GOOGLE_API_KEY"))
+        return self._secondary_llm
+    
+    async def generate_with_fallback(self, messages: List[Union[HumanMessage, SystemMessage]]) -> str:
+        # Note: Basic token estimation. For precise counts, you would use the API response metadata.
+        prompt_tokens = sum(len(m.content) for m in messages) // 4 
+        
+        models_to_try = [m for m in [self.primary_llm, self.secondary_llm] if m is not None]
+        if not models_to_try:
+            raise Exception("No LLM models are available.")
+        for model in models_to_try:
+            try:
+                response = await model.ainvoke(messages)
+                content = response.content if hasattr(response, 'content') else str(response)
+                if content and "Error:" not in content:
+                    completion_tokens = len(content) // 4
+                    self.token_counts["total_tokens"] += prompt_tokens + completion_tokens
+                    return content.strip()
+            except Exception as e:
+                logger.warning(f"Model {type(model).__name__} failed: {e}")
+        raise Exception("All available LLM models failed.")
     # ...existing code...
