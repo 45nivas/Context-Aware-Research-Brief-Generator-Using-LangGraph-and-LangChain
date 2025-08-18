@@ -1,27 +1,16 @@
 """
 FREE LLM and search tools for the Research Brief Generator.
-
-This module provides integrations with FREE alternatives:
-- OpenRouter (via a custom wrapper)
-- Google Gemini (free tier)
-- DuckDuckGo Search (completely free)
 """
-
-# IMPORTANT: Load environment variables at the very beginning
 from dotenv import load_dotenv
 load_dotenv()
 
-# --- Standard Library Imports ---
 import os
 import asyncio
-from typing import List, Dict, Any, Optional, Union
+import httpx
 import logging
 import re
+from typing import List, Dict, Any, Optional, Union
 
-# --- Third-Party Imports ---
-import httpx
-
-# --- LangChain and Search Tool Imports ---
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI
     GOOGLE_AVAILABLE = True
@@ -38,13 +27,11 @@ from langchain_core.language_models import BaseLanguageModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.models import SourceSummary
 
-# --- Setup Logging ---
 logger = logging.getLogger(__name__)
 
-# --- Custom OpenRouter Class ---
 class OpenRouterLLM:
     """Custom LLM wrapper for OpenRouter API."""
-    def __init__(self, api_key: str, model: str = "openrouter/openchat-3.5-0106"):
+    def __init__(self, api_key: str, model: str):
         self.api_key = api_key
         self.model = model
 
@@ -63,7 +50,6 @@ class OpenRouterLLM:
             logger.error(f"Custom OpenRouter API call failed: {e}")
             return f"Error: {e}"
 
-# --- LLM and Search Managers ---
 class FreeLLMManager:
     """Manages free LLM models including OpenRouter and Gemini."""
     def __init__(self):
@@ -87,11 +73,9 @@ class FreeLLMManager:
             logger.warning("❌ Google Gemini not available (missing GOOGLE_API_KEY or package).")
             
     def reset_token_usage(self):
-        """Resets the token usage counter for a new run."""
         self.token_counts = {"total_tokens": 0}
 
     def get_token_usage(self) -> Dict[str, int]:
-        """Gets the current token usage."""
         return self.token_counts
 
     @property
@@ -107,9 +91,7 @@ class FreeLLMManager:
         return self._secondary_llm
     
     async def generate_with_fallback(self, messages: List[Union[HumanMessage, SystemMessage]]) -> str:
-        # Note: Basic token estimation. For precise counts, you would use the API response metadata.
         prompt_tokens = sum(len(m.content) for m in messages) // 4 
-        
         models_to_try = [m for m in [self.primary_llm, self.secondary_llm] if m is not None]
         if not models_to_try:
             raise Exception("No LLM models are available.")
@@ -128,14 +110,19 @@ class FreeLLMManager:
 class FreeSearchManager:
     """Manages free search tools."""
     async def search_with_fallback(self, query: str, max_results: int = 5) -> List[dict]:
-        if DUCKDUCKGO_AVAILABLE:
-            try:
-                async with DDGS() as ddgs:
-                    results = [r async for r in ddgs.text(query, max_results=max_results)]
-                    return results
-            except Exception as e:
-                logger.error(f"DuckDuckGo search failed: {e}")
-        return []
+        if not DUCKDUCKGO_AVAILABLE:
+            logger.error("DuckDuckGo search is not installed. Cannot perform search.")
+            return []
+        try:
+            # CORRECT WAY: Instantiate DDGS and call the text method without async with
+            ddgs = DDGS()
+            # Since ddgs.text is synchronous, we run it in a separate thread
+            # to avoid blocking the asyncio event loop.
+            results = await asyncio.to_thread(ddgs.text, query, max_results=max_results)
+            return results
+        except Exception as e:
+            logger.error(f"DuckDuckGo search failed: {e}")
+            return []
 
 class ContentFetcher:
     """Fetches and cleans content from web URLs."""
@@ -154,10 +141,8 @@ class ContentFetcher:
             return None
             
     async def close(self):
-        """Placeholder for cleanup. This method now exists to prevent errors."""
-        pass
+        pass # This method exists to prevent shutdown errors
 
-# --- Instantiated Managers and Helper Functions ---
 llm_manager = FreeLLMManager()
 search_manager = FreeSearchManager()
 content_fetcher = ContentFetcher()
@@ -173,7 +158,6 @@ async def fetch_content_free(url: str) -> str:
     return content or ""
 
 async def summarize_source_free(content: str, query: str) -> SourceSummary:
-    """Summarizes content using the primary, faster LLM."""
     try:
         prompt = f"Summarize the following content in the context of the research query: '{query}'\n\nContent:\n{content[:8000]}"
         messages = [HumanMessage(content=prompt)]
