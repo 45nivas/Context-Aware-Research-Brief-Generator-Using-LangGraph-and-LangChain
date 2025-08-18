@@ -108,32 +108,28 @@ class FreeLLMManager:
         raise Exception("All available LLM models failed.")
 
 class FreeSearchManager:
-    """Manages free search tools."""
+    """Manages free search tools using the official ddgs library."""
     async def search_with_fallback(self, query: str, max_results: int = 5) -> List[dict]:
-        """Performs a web search using a direct DuckDuckGo HTML request."""
-        url = "https://html.duckduckgo.com/html/"
-        params = {"q": query}
-        headers = {"User-Agent": "Mozilla/5.0"}
+        if not DUCKDUCKGO_AVAILABLE:
+            logger.error("DuckDuckGo search is not installed. Cannot perform search.")
+            return []
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, data=params, headers=headers)
-                response.raise_for_status()
-
-            # --- Parsing Logic ---
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(response.text, 'html.parser')
-            results = []
-            for link in soup.find_all('a', class_='result__a'):
-                if len(results) >= max_results:
-                    break
-                results.append({
-                    "title": link.text,
-                    "url": link['href'],
-                    "snippet": link.find_next('a', class_='result__snippet').text
-                })
-            return results
+            ddgs = DDGS()
+            # Run the synchronous ddgs.text method in a separate thread
+            results = await asyncio.to_thread(ddgs.text, query, max_results=max_results)
+            # Format the output to match what the rest of the application expects
+            formatted_results = [
+                {
+                    "title": r.get("title"),
+                    "url": r.get("href"),
+                    "snippet": r.get("body")
+                } for r in results
+            ]
+            if not formatted_results:
+                 logger.warning(f"DuckDuckGo returned no results for query: {query}")
+            return formatted_results
         except Exception as e:
-            logger.error(f"Direct DuckDuckGo search failed: {e}")
+            logger.error(f"DuckDuckGo search with ddgs library failed: {e}")
             return []
 
 class ContentFetcher:
