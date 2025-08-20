@@ -114,24 +114,41 @@ def generate(
 def display_rich_output(result):
     """Display results in rich format."""
     
+    # Handle both dict and FinalBrief object
+    if isinstance(result, dict):
+        title = result.get('title', 'Research Brief')
+        executive_summary = result.get('executive_summary', 'No summary available')
+        key_findings = result.get('key_findings', [])
+        detailed_analysis = result.get('detailed_analysis', 'No analysis available')
+        implications = result.get('implications', 'No implications available')
+        references = result.get('references', [])
+    else:
+        # FinalBrief object
+        title = result.title
+        executive_summary = result.executive_summary
+        key_findings = result.key_findings
+        detailed_analysis = result.detailed_analysis
+        implications = result.implications
+        references = result.references
+    
     # Title and executive summary
-    console.print(Panel(result.title, style="bold green", title="Research Brief"))
-    console.print(Panel(result.executive_summary, title="Executive Summary", style="blue"))
+    console.print(Panel(title, style="bold green", title="Research Brief"))
+    console.print(Panel(executive_summary, title="Executive Summary", style="blue"))
     
     # Key findings
-    if result.key_findings:
+    if key_findings:
         console.print("\n📋 Key Findings:")
-        for i, finding in enumerate(result.key_findings, 1):
+        for i, finding in enumerate(key_findings, 1):
             console.print(f"  {i}. {finding}")
     
     # Detailed analysis
-    console.print(Panel(result.detailed_analysis, title="Detailed Analysis", style="cyan"))
+    console.print(Panel(detailed_analysis, title="Detailed Analysis", style="cyan"))
     
     # Implications
-    console.print(Panel(result.implications, title="Implications", style="yellow"))
+    console.print(Panel(implications, title="Implications", style="yellow"))
     
     # References
-    if result.references:
+    if references:
         console.print("\n📚 References:")
         ref_table = Table(show_header=True, header_style="bold magenta")
         ref_table.add_column("Title", style="cyan")

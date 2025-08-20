@@ -164,7 +164,27 @@ QUALITY REQUIREMENTS:
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
         
         response_str = await generate_text_with_fallback(messages)
-        research_plan = parser.parse(response_str)
+        
+        # Try to parse with improved error handling
+        try:
+            research_plan = parser.parse(response_str)
+        except Exception as parse_error:
+            logger.warning(f"Failed to parse planning response: {parse_error}. Attempting JSON cleanup.")
+            import json
+            import re
+            
+            # Clean up common JSON issues in planning response
+            clean_response = re.sub(r'`([^`]*)`', r'"\1"', response_str)  # Replace backticks with quotes
+            clean_response = re.sub(r',\s*}', '}', clean_response)  # Remove trailing commas
+            clean_response = re.sub(r',\s*]', ']', clean_response)  # Remove trailing commas in arrays
+            
+            try:
+                research_plan = parser.parse(clean_response)
+            except Exception:
+                # If still failing, create fallback plan
+                logger.error(f"Planning JSON cleanup failed: {parse_error}. Using fallback.")
+                raise parse_error
+        
         state.research_plan = research_plan
 
     except Exception as e:
@@ -415,16 +435,27 @@ Return ONLY the JSON object, no other text."""
             json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_str, re.DOTALL)
             if json_match:
                 try:
-                    json_data = json.loads(json_match.group(1))
+                    json_str = json_match.group(1)
+                    # Clean up common JSON issues
+                    json_str = re.sub(r'`([^`]*)`', r'"\1"', json_str)  # Replace backticks with quotes
+                    json_str = re.sub(r',\s*}', '}', json_str)  # Remove trailing commas
+                    json_str = re.sub(r',\s*]', ']', json_str)  # Remove trailing commas in arrays
+                    
+                    json_data = json.loads(json_str)
                     # Validate and create FinalBrief from JSON
                     brief = FinalBrief.model_validate(json_data)
                 except Exception as json_error:
                     logger.error(f"Failed to parse extracted JSON: {json_error}")
                     raise parse_error
             else:
-                # Try direct JSON parsing
+                # Try direct JSON parsing with cleanup
                 try:
-                    json_data = json.loads(response_str)
+                    # Clean up the response string
+                    clean_response = re.sub(r'`([^`]*)`', r'"\1"', response_str)
+                    clean_response = re.sub(r',\s*}', '}', clean_response)
+                    clean_response = re.sub(r',\s*]', ']', clean_response)
+                    
+                    json_data = json.loads(clean_response)
                     brief = FinalBrief.model_validate(json_data)
                 except Exception:
                     raise parse_error
