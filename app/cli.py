@@ -155,17 +155,31 @@ def display_rich_output(result):
         ref_table.add_column("URL", style="blue")
         ref_table.add_column("Relevance", style="green")
         
-        for ref in result.references:
+        for ref in references:
+            # Handle both dict and object references
+            if isinstance(ref, dict):
+                title = ref.get('title', 'No title')
+                url = ref.get('url', 'No URL')
+                relevance_note = ref.get('relevance_note', 'No note')
+            else:
+                title = ref.title
+                url = ref.url  
+                relevance_note = ref.relevance_note
+                
             ref_table.add_row(
-                ref.title[:50] + "..." if len(ref.title) > 50 else ref.title,
-                ref.url[:60] + "..." if len(ref.url) > 60 else ref.url,
-                ref.relevance_note[:40] + "..." if len(ref.relevance_note) > 40 else ref.relevance_note
+                title[:50] + "..." if len(title) > 50 else title,
+                url[:60] + "..." if len(url) > 60 else url,
+                relevance_note[:40] + "..." if len(relevance_note) > 40 else relevance_note
             )
         
         console.print(ref_table)
     
     # Limitations
-    console.print(Panel(result.limitations, title="Limitations", style="red"))
+    if isinstance(result, dict):
+        limitations = result.get('limitations', 'No limitations specified')
+    else:
+        limitations = result.limitations
+    console.print(Panel(limitations, title="Limitations", style="red"))
 
 
 def display_json_output(result, output_path: Optional[str]):
@@ -231,22 +245,57 @@ def display_metrics(result):
     """Display execution metrics."""
     console.print("\n📊 Execution Metrics:")
     
-    metrics_table = Table(show_header=True, header_style="bold cyan")
-    metrics_table.add_column("Metric", style="cyan")
-    metrics_table.add_column("Value", style="green")
+    try:
+        # Handle both dict and FinalBrief object
+        if isinstance(result, dict):
+            metadata = result.get('metadata', {})
+            if not metadata:
+                console.print("❌ Error: Metadata not available")
+                return
+            
+            # Extract values from dict metadata
+            research_duration = metadata.get('research_duration', 'N/A')
+            total_sources_found = metadata.get('total_sources_found', 'N/A')
+            sources_used = metadata.get('sources_used', 'N/A') 
+            confidence_score = metadata.get('confidence_score', 0.0)
+            depth_level_name = metadata.get('depth_level', {}).get('name', 'N/A') if isinstance(metadata.get('depth_level'), dict) else str(metadata.get('depth_level', 'N/A'))
+            token_usage = metadata.get('token_usage', {})
+        else:
+            # Handle FinalBrief object
+            if not hasattr(result, 'metadata') or not result.metadata:
+                console.print("❌ Error: Metadata not available")
+                return
+                
+            metadata = result.metadata
+            research_duration = metadata.research_duration
+            total_sources_found = metadata.total_sources_found
+            sources_used = metadata.sources_used
+            confidence_score = metadata.confidence_score
+            depth_level_name = metadata.depth_level.name
+            token_usage = metadata.token_usage
     
-    metrics_table.add_row("Research Duration", f"{result.metadata.research_duration}s")
-    metrics_table.add_row("Total Sources Found", str(result.metadata.total_sources_found))
-    metrics_table.add_row("Sources Used", str(result.metadata.sources_used))
-    metrics_table.add_row("Confidence Score", f"{result.metadata.confidence_score:.2f}")
-    metrics_table.add_row("Depth Level", result.metadata.depth_level.name)
-    
-    # Token usage
-    if result.metadata.token_usage:
-        for model, usage in result.metadata.token_usage.items():
-            metrics_table.add_row(f"Tokens ({model})", str(usage.get('total_tokens', 0)))
-    
-    console.print(metrics_table)
+        metrics_table = Table(show_header=True, header_style="bold cyan")
+        metrics_table.add_column("Metric", style="cyan")
+        metrics_table.add_column("Value", style="green")
+        
+        metrics_table.add_row("Research Duration", f"{research_duration}s" if research_duration != 'N/A' else 'N/A')
+        metrics_table.add_row("Total Sources Found", str(total_sources_found))
+        metrics_table.add_row("Sources Used", str(sources_used))
+        metrics_table.add_row("Confidence Score", f"{confidence_score:.2f}" if isinstance(confidence_score, (int, float)) else str(confidence_score))
+        metrics_table.add_row("Depth Level", str(depth_level_name))
+        
+        # Add token usage if available
+        if token_usage:
+            for model, usage in token_usage.items():
+                if isinstance(usage, dict):
+                    total_tokens = usage.get('total_tokens', usage.get('prompt_tokens', 0) + usage.get('completion_tokens', 0))
+                    metrics_table.add_row(f"Tokens ({model})", str(total_tokens))
+        
+        console.print(metrics_table)
+        
+    except Exception as e:
+        console.print(f"❌ Error displaying metrics: {str(e)}")
+        return
 
 
 @cli.command()

@@ -156,6 +156,20 @@ QUALITY REQUIREMENTS:
 - Include both theoretical and practical implementation perspectives
 - Focus on recent developments and current research trends
 
+RESPOND WITH ACTUAL JSON DATA, NOT SCHEMA. Example format:
+{{
+  "topic": "{state.topic}",
+  "steps": [
+    {{
+      "step_number": 1,
+      "query": "your actual search query here",
+      "rationale": "why this query is needed"
+    }}
+  ]
+}}
+
+DO NOT return schema definitions or $defs. Return only the actual JSON data for this specific research topic.
+
 {format_instructions}"""
         
         context_info = f"\nPrevious research context:\n{state.user_context.preferences.get('last_context_summary', 'None')}" if state.follow_up else ""
@@ -174,9 +188,22 @@ QUALITY REQUIREMENTS:
             import re
             
             # Clean up common JSON issues in planning response
-            clean_response = re.sub(r'`([^`]*)`', r'"\1"', response_str)  # Replace backticks with quotes
+            clean_response = response_str
+            # First, protect actual JSON structure
             clean_response = re.sub(r',\s*}', '}', clean_response)  # Remove trailing commas
             clean_response = re.sub(r',\s*]', ']', clean_response)  # Remove trailing commas in arrays
+            
+            # Handle backticks more carefully - only replace those NOT in JSON values
+            # Replace backticks in query values with escaped quotes
+            clean_response = re.sub(r'`([^`\n]*)`', r'"\1"', clean_response)
+            
+            # Fix single quotes in JSON strings - replace with double quotes
+            # This is specifically for strings like 'query': '...' which should be "query": "..."
+            clean_response = re.sub(r"'([^']*)':", r'"\1":', clean_response)  # Fix keys
+            clean_response = re.sub(r":\s*'([^']*)'", r': "\1"', clean_response)  # Fix simple string values
+            
+            # Fix any issues with quote escaping in complex queries
+            clean_response = clean_response.replace('\\"', '\\\\"')  # Properly escape inner quotes
             
             try:
                 research_plan = parser.parse(clean_response)
