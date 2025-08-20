@@ -3,24 +3,54 @@
 
 ### ✅ SUBMISSION EVIDENCE
 
-**🌐 Live Deployed API:** https://context-aware-research-brief-generator-f2se.onrender.com  
-**📖 API Documentation:** https://context-aware-research-brief-generator-f2se.onrender.com/docs  
 **💻 GitHub Repository:** https://github.com/45nivas/Context-Aware-Research-Brief-Generator-Using-LangGraph-and-LangChain  
-**🔍 LangSmith Project:** research-brief-generator (https://smith.langchain.com/)  
+
+**🌐 Deployed API URLs:**
+- **Main API:** https://context-aware-research-brief-generator-f2se.onrender.com
+- **Documentation:** https://context-aware-research-brief-generator-f2se.onrender.com/docs  
+- **Health Check:** https://context-aware-research-brief-generator-f2se.onrender.com/health
+
+**🔍 LangSmith Execution Traces:**
+- [Quantum Computing & Cybersecurity](https://smith.langchain.com/public/248e7373-2083-4c9c-94e8-44c25da158d6/r)
+- [Blockchain in Supply Chain](https://smith.langchain.com/public/e7c129a5-e80d-4611-b987-1f4e5e1b742d/r)  
+- [AI in Healthcare](https://smith.langchain.com/public/effa8245-8156-4054-927a-1da5cf5ec1bb/r)
+- [ML in Climate Prediction](https://smith.langchain.com/public/cb4f0666-7301-4e82-8693-d233918d297d/r)
+
+**⌨️ CLI Entry Point:** `python -m app.cli generate "Your research topic" --depth 3`
+
+**📋 Sample Request/Response:**
+```bash
+POST /brief
+{
+  "topic": "Impact of AI on healthcare systems",
+  "depth": "standard", 
+  "follow_up": false,
+  "user_id": "demo_user"
+}
+# Response: HTTP 202 + workflow_id for tracking
+```
 
 ### 📋 QUICK VERIFICATION
 
 ```bash
 # Test deployed API
-curl -X POST "https://context-aware-research-brief-generator-f2se.onrender.com/brief" 
--H "Content-Type: application/json" 
--d '{"topic": "AI impact on healthcare", "depth": "standard", "user_id": "evaluator"}'
+curl -X POST "https://context-aware-research-brief-generator-f2se.onrender.com/brief" \
+-H "Content-Type: application/json" \
+-d '{"topic": "Impact of AI on healthcare systems", "depth": "standard", "user_id": "demo_user"}'
 
-# Test CLI locally
+# Basic CLI demo
+python -m app.cli generate "AI impact on healthcare" --depth 2
+
+# Advanced CLI usage  
+python -m app.cli generate "Machine learning in education" --depth 3 --context "Focus on K-12" --output results.json
+
+# CLI help
+python -m app.cli --help
+
+# Local setup
 git clone https://github.com/45nivas/Context-Aware-Research-Brief-Generator-Using-LangGraph-and-LangChain.git
 cd Context-Aware-Research-Brief-Generator-Using-LangGraph-and-LangChain
 pip install -r requirements.txt
-python -m app.cli generate "AI tutoring systems" --depth 2
 ```
 
 **🎯 Status:** ✅ ALL REQUIREMENTS COMPLETE AND FUNCTIONAL
