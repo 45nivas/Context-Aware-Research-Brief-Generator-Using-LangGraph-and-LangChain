@@ -1,4 +1,3 @@
-````markdown
 # 🎯 Context-Aware Research Brief Generator Using LangGraph and LangChain
 
 
@@ -704,6 +703,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🤝 Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+
+---
 
 ---
 
