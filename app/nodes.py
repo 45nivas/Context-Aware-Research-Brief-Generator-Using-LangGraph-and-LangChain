@@ -366,7 +366,7 @@ Generate a JSON research brief with:
 - detailed_analysis: Thorough analysis based on source content
 - implications: What these findings mean for stakeholders
 - limitations: Research limitations and data gaps
-- references: Array of source objects with title, url, relevance_note
+- references: Array of source objects with title, url, relevance_note (required!)
 - metadata: Object with exact numeric values:
   * research_duration: integer seconds (e.g., 1800)
   * total_sources_found: integer count (e.g., 5)
@@ -374,7 +374,18 @@ Generate a JSON research brief with:
   * confidence_score: float 0.0-1.0 (e.g., 0.85)
   * depth_level: integer 1-4 only (e.g., 2)
 
-CRITICAL: metadata must use exact numeric formats - no strings like "1 hour" or "moderate".
+CRITICAL: 
+1. metadata must use exact numeric formats - no strings like "1 hour" or "moderate"
+2. Each reference MUST include relevance_note field explaining why the source is relevant
+
+Example reference format:
+"references": [
+  {{
+    "title": "Source Title Here",
+    "url": "https://example.com/source",
+    "relevance_note": "This source provides key insights about [specific aspect] relevant to {state.topic}"
+  }}
+]
 
 Example metadata format:
 "metadata": {{
