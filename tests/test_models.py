@@ -276,7 +276,7 @@ class TestFinalBrief:
                 )
             )
         
-        assert "at least one reference" in str(exc_info.value)
+        assert "At least one reference is required" in str(exc_info.value)
 
 
 class TestReference:

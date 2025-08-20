@@ -3,10 +3,10 @@ Pydantic models for the Research Brief Generator.
 Provides type safety and schema validation for all data structures.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from enum import Enum
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class DepthLevel(int, Enum):
@@ -91,7 +91,8 @@ class FinalBrief(BaseModel):
     references: List[Reference] = Field(..., description="Source references")
     metadata: BriefMetadata = Field(..., description="Brief metadata")
 
-    @validator('references')
+    @field_validator('references')
+    @classmethod
     def validate_references(cls, v):
         """Ensure at least one reference is included."""
         if len(v) < 1:
@@ -101,11 +102,11 @@ class FinalBrief(BaseModel):
 
 class BriefRequest(BaseModel):
     """Request model for brief generation."""
-    topic: str = Field(..., min_length=10, max_length=500, description="Research topic", example="The impact of AI on education")
-    depth: DepthLevel = Field(default=DepthLevel.STANDARD, description="Research depth level (can be integer 1-4 or string: QUICK, STANDARD, COMPREHENSIVE, EXHAUSTIVE)", example="STANDARD")
-    follow_up: bool = Field(default=False, description="Whether this is a follow-up request", example=False)
-    user_id: str = Field(..., min_length=1, max_length=100, description="User identifier", example="testuser123")
-    context: Optional[str] = Field(None, description="Additional context from user", example="Recent trends and challenges")
+    topic: str = Field(..., min_length=10, max_length=500, description="Research topic", json_schema_extra={"example": "The impact of AI on education"})
+    depth: DepthLevel = Field(default=DepthLevel.STANDARD, description="Research depth level (can be integer 1-4 or string: QUICK, STANDARD, COMPREHENSIVE, EXHAUSTIVE)", json_schema_extra={"example": "STANDARD"})
+    follow_up: bool = Field(default=False, description="Whether this is a follow-up request", json_schema_extra={"example": False})
+    user_id: str = Field(..., min_length=1, max_length=100, description="User identifier", json_schema_extra={"example": "testuser123"})
+    context: Optional[str] = Field(None, description="Additional context from user", json_schema_extra={"example": "Recent trends and challenges"})
 
 
 class UserContext(BaseModel):
@@ -140,8 +141,7 @@ class GraphState(BaseModel):
     errors: List[str] = Field(default_factory=list)
     retry_count: Dict[str, int] = Field(default_factory=dict)
     
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class NodeResult(BaseModel):

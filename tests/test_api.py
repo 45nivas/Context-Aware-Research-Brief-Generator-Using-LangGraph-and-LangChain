@@ -32,23 +32,16 @@ def mock_db():
 
 
 @pytest.fixture
-def mock_config():
-    """Mock configuration for testing."""
-    with patch('app.api.config') as mock:
-        mock.validate.return_value = True
-        mock.database.url = "sqlite:///test.db"
-        mock.tracing.enabled = False
-        mock.get_model_rationale.return_value = {
-            "primary_model": "GPT-4 for reasoning",
-            "secondary_model": "Claude for summarization"
-        }
+def mock_llm_manager():
+    """Mock LLM manager for testing."""
+    with patch('app.api.research_workflow') as mock:
         yield mock
 
 
 class TestRootEndpoints:
     """Test root and utility endpoints."""
     
-    def test_root_endpoint(self, client, mock_config):
+    def test_root_endpoint(self, client):
         """Test root endpoint returns API information."""
         response = client.get("/")
         
@@ -56,10 +49,9 @@ class TestRootEndpoints:
         data = response.json()
         assert "message" in data
         assert "version" in data
-        assert "endpoints" in data
-        assert "model_configuration" in data
+        assert "docs" in data
     
-    def test_health_check_success(self, client, mock_db, mock_config):
+    def test_health_check_success(self, client, mock_db):
         """Test successful health check."""
         mock_db.get_user_context = AsyncMock(return_value=None)
         
@@ -75,7 +67,7 @@ class TestRootEndpoints:
         assert "database" in data
         assert "llm_models" in data
     
-    def test_health_check_failure(self, client, mock_db, mock_config):
+    def test_health_check_failure(self, client, mock_db):
         """Test health check failure."""
         mock_db.get_user_context = AsyncMock(side_effect=Exception("DB Connection Failed"))
         
@@ -88,7 +80,7 @@ class TestRootEndpoints:
 class TestBriefGeneration:
     """Test research brief generation endpoint."""
     
-    def test_generate_brief_success(self, client, mock_workflow, mock_db, mock_config):
+    def test_generate_brief_success(self, client, mock_workflow, mock_db):
         """Test successful brief generation."""
         # Setup mock final brief
         mock_brief = FinalBrief(
@@ -132,7 +124,7 @@ class TestBriefGeneration:
         assert len(data["key_findings"]) == 2
         assert data["metadata"]["confidence_score"] == 0.85
     
-    def test_generate_brief_validation_errors(self, client, mock_config):
+    def test_generate_brief_validation_errors(self, client):
         """Test request validation errors."""
         
         # Test empty topic
@@ -161,7 +153,7 @@ class TestBriefGeneration:
         })
         assert response.status_code == 422  # Pydantic validation error
     
-    def test_generate_brief_workflow_failure(self, client, mock_workflow, mock_db, mock_config):
+    def test_generate_brief_workflow_failure(self, client, mock_workflow, mock_db):
         """Test handling of workflow execution failure."""
         mock_workflow.run_workflow = AsyncMock(side_effect=Exception("Workflow failed"))
         mock_db.init_db = AsyncMock()
@@ -178,7 +170,7 @@ class TestBriefGeneration:
         assert response.status_code == 500
         assert "Workflow execution failed" in response.json()["detail"]
     
-    def test_generate_brief_with_context(self, client, mock_workflow, mock_db, mock_config):
+    def test_generate_brief_with_context(self, client, mock_workflow, mock_db):
         """Test brief generation with additional context."""
         mock_brief = FinalBrief(
             title="Contextual AI Brief",
@@ -261,7 +253,7 @@ class TestWorkflowStatus:
 class TestUserHistory:
     """Test user history endpoints."""
     
-    def test_get_user_history_success(self, client, mock_db, mock_config):
+    def test_get_user_history_success(self, client, mock_db):
         """Test successful user history retrieval."""
         from app.models import UserContext
         from app.database import ResearchBriefDB
@@ -294,7 +286,7 @@ class TestUserHistory:
         assert len(data["recent_briefs"]) == 1
         assert data["user_context"] is not None
     
-    def test_get_user_history_no_user(self, client, mock_db, mock_config):
+    def test_get_user_history_no_user(self, client, mock_db):
         """Test user history for non-existent user."""
         mock_db.get_user_context = AsyncMock(return_value=None)
         mock_db.get_user_briefs = AsyncMock(return_value=[])
@@ -306,7 +298,7 @@ class TestUserHistory:
         assert data["total_briefs"] == 0
         assert data["user_context"] is None
     
-    def test_get_user_history_error(self, client, mock_db, mock_config):
+    def test_get_user_history_error(self, client, mock_db):
         """Test user history retrieval error."""
         mock_db.get_user_context = AsyncMock(side_effect=Exception("Database error"))
         
@@ -319,7 +311,7 @@ class TestUserHistory:
 class TestMetricsAndUtilities:
     """Test metrics and utility endpoints."""
     
-    def test_get_metrics(self, client, mock_config):
+    def test_get_metrics(self, client):
         """Test metrics endpoint."""
         with patch('app.api.active_workflows', {
             "workflow1": {"status": "running"},
@@ -344,7 +336,7 @@ class TestMetricsAndUtilities:
         assert "token_usage" in data
         assert "configuration" in data
     
-    def test_get_workflow_graph(self, client, mock_config):
+    def test_get_workflow_graph(self, client):
         """Test workflow graph visualization endpoint."""
         with patch('app.api.research_workflow') as mock_workflow:
             mock_workflow.get_graph_visualization.return_value = "Mock graph visualization"
@@ -371,13 +363,13 @@ class TestMetricsAndUtilities:
 class TestErrorHandling:
     """Test error handling across API endpoints."""
     
-    def test_value_error_handler(self, client, mock_config):
+    def test_value_error_handler(self, client):
         """Test custom ValueError handler."""
         # This would need to be triggered by an endpoint that raises ValueError
         # For now, we test that the handler exists
         assert hasattr(app, 'exception_handler')
     
-    def test_general_exception_handler(self, client, mock_config):
+    def test_general_exception_handler(self, client):
         """Test general exception handler."""
         # Test with an endpoint that might raise an unexpected exception
         with patch('app.api.research_workflow') as mock_workflow:

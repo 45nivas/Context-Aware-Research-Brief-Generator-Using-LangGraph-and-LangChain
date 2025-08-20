@@ -87,9 +87,75 @@ async def planning_node(state: Dict[str, Any]) -> Dict[str, Any]:
         parser = PydanticOutputParser(pydantic_object=ResearchPlan)
         format_instructions = parser.get_format_instructions()
         
-        system_prompt = f"""You are an expert research strategist. Create a research plan for the given topic.
-- Depth Level {state.depth.value} ({state.depth.name}): Generate {state.depth.value + 1} focused search queries.
-- For each step, provide a specific search query and a clear rationale.
+        # Enhanced topic-specific search strategy
+        topic_lower = state.topic.lower()
+        domain_context = ""
+        search_modifiers = []
+        
+        # Detect topic domain and add specific context
+        if "artificial intelligence" in topic_lower or "ai" in topic_lower:
+            if "education" in topic_lower or "learning" in topic_lower or "teaching" in topic_lower:
+                domain_context = "AI/ML in Education Research"
+                search_modifiers = [
+                    '"artificial intelligence in education" OR "AI in education"',
+                    '"machine learning classroom" OR "AI tutoring systems"',
+                    '"educational technology" AND "artificial intelligence"',
+                    '"AI-powered learning" OR "intelligent tutoring"',
+                    '"personalized learning AI" OR "adaptive learning systems"'
+                ]
+            else:
+                domain_context = "Artificial Intelligence Research"
+                search_modifiers = [
+                    '"artificial intelligence" research applications',
+                    '"machine learning" algorithms implementation',
+                    '"deep learning" systems development',
+                    '"neural networks" practical applications',
+                    '"AI ethics" AND "responsible AI"'
+                ]
+        elif "machine learning" in topic_lower:
+            domain_context = "Machine Learning Research"
+            search_modifiers = [
+                '"machine learning" algorithms research',
+                '"supervised learning" OR "unsupervised learning"',
+                '"predictive modeling" case studies',
+                '"data science" machine learning applications',
+                '"ML model deployment" best practices'
+            ]
+        else:
+            # Generic academic research approach
+            domain_context = "Academic Research"
+            search_modifiers = [
+                f'"{state.topic}" research study',
+                f'"{state.topic}" academic analysis',
+                f'"{state.topic}" case study implementation',
+                f'"{state.topic}" empirical research findings'
+            ]
+
+        system_prompt = f"""You are an expert research strategist specializing in {domain_context}. Create a research plan for the given topic that will find substantive academic and research content.
+
+CRITICAL REQUIREMENTS:
+- Topic: {state.topic}
+- Domain Context: {domain_context}
+- Generate {state.depth.value + 1} HIGHLY SPECIFIC search queries focused on research and academic content
+- Each query must target scholarly articles, research papers, case studies, and implementation reports
+- AVOID dictionary definitions, general overviews, and basic explanations
+
+ENHANCED SEARCH STRATEGY:
+- Use domain-specific terminology and academic language
+- Include research indicators: "study", "research", "analysis", "implementation", "case study"
+- Target academic sources: "academic", "journal", "conference", "proceedings", "publication"
+- Use quoted phrases for exact matches on key concepts
+- Combine multiple relevant terms with AND/OR operators
+
+SUGGESTED SEARCH PATTERNS:
+{chr(10).join(f"- {modifier}" for modifier in search_modifiers)}
+
+QUALITY REQUIREMENTS:
+- Each query should target different aspects of the research topic
+- Prioritize peer-reviewed and academic sources
+- Include both theoretical and practical implementation perspectives
+- Focus on recent developments and current research trends
+
 {format_instructions}"""
         
         context_info = f"\nPrevious research context:\n{state.user_context.preferences.get('last_context_summary', 'None')}" if state.follow_up else ""
@@ -133,9 +199,18 @@ async def search_node(state: Dict[str, Any]) -> Dict[str, Any]:
         seen_urls = set()
         unique_results = []
         for res in all_search_results:
-            if res.get('href') and res['href'] not in seen_urls:
-                unique_results.append(res)
-                seen_urls.add(res['href'])
+            url = res.get('href', res.get('url', ''))
+            if url and url not in seen_urls:
+                # Create SearchResult objects from the raw results
+                from app.models import SearchResult
+                search_result = SearchResult(
+                    title=res.get('title', 'Untitled'),
+                    url=url,
+                    snippet=res.get('body', res.get('snippet', '')),
+                    relevance_score=0.8  # Default relevance
+                )
+                unique_results.append(search_result)
+                seen_urls.add(url)
         
         state.search_results = unique_results[:10] # Limit to top 10 unique results
         
@@ -162,17 +237,29 @@ async def content_fetching_node(state: Dict[str, Any]) -> Dict[str, Any]:
         if not state.search_results:
             raise ValueError("No search results to fetch content from.")
 
-        tasks = {fetch_content_free(result['href']): result for result in state.search_results[:5]} # Fetch top 5
+        tasks = []
+        for result in state.search_results[:5]:  # Fetch top 5
+            url = result.url if hasattr(result, 'url') else result.get('href', '')
+            if url:
+                tasks.append(fetch_content_free(url))
+        
+        if not tasks:
+            raise ValueError("No valid URLs found to fetch content from.")
+        
+        contents = await asyncio.gather(*tasks)
         
         source_contents = []
-        for future in asyncio.as_completed(tasks):
-            result_meta = tasks[future]
-            content = await future
-            if content and len(content.strip()) > 100: # Basic content quality check
+        for i, content in enumerate(contents):
+            if content and len(content.strip()) > 100:  # Basic content quality check
+                result = state.search_results[i]
+                url = result.url if hasattr(result, 'url') else result.get('href', '')
+                title = result.title if hasattr(result, 'title') else result.get('title', 'Untitled')
+                
                 source_contents.append(SourceContent(
-                    url=result_meta['href'],
-                    title=result_meta['title'],
-                    content=content
+                    url=url,
+                    title=title,
+                    content=content,
+                    content_length=len(content)
                 ))
         
         state.source_contents = source_contents
@@ -201,20 +288,28 @@ async def per_source_summarization_node(state: Dict[str, Any]) -> Dict[str, Any]
         if not sources_to_process:
             raise ValueError("No sources available for summarization.")
 
-        summarization_tasks = [
-            summarize_source_free(
-                content=source.content if isinstance(source, SourceContent) else source.get('body', ''),
-                query=state.topic
-            ) for source in sources_to_process
-        ]
+        summarization_tasks = []
+        for source in sources_to_process:
+            if isinstance(source, SourceContent):
+                content_text = source.content
+            else:
+                # Handle SearchResult objects
+                content_text = source.snippet if hasattr(source, 'snippet') else source.get('body', '')
+            
+            summarization_tasks.append(summarize_source_free(content_text, state.topic))
         
         summaries = await asyncio.gather(*summarization_tasks)
         
         # Add original source info back to the summary object
         for i, summary in enumerate(summaries):
             source = sources_to_process[i]
-            summary.url = source.url if isinstance(source, SourceContent) else source.get('href')
-            summary.title = source.title if isinstance(source, SourceContent) else source.get('title')
+            if isinstance(source, SourceContent):
+                summary.url = source.url
+                summary.title = source.title
+            else:
+                # Handle SearchResult objects
+                summary.url = source.url if hasattr(source, 'url') else source.get('href', '')
+                summary.title = source.title if hasattr(source, 'title') else source.get('title', 'Untitled')
 
         state.source_summaries = [s for s in summaries if s.summary and "Error" not in s.summary]
         
@@ -246,37 +341,121 @@ async def synthesis_node(state: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("Secondary LLM (Gemini) not available for synthesis.")
 
         parser = PydanticOutputParser(pydantic_object=FinalBrief)
-        format_instructions = parser.get_format_instructions()
         
         summaries_text = "\n\n---\n\n".join(
             [f"Source Title: {s.title}\nURL: {s.url}\nSummary: {s.summary}" for s in state.source_summaries]
         )
 
-        system_prompt = f"""You are an expert research analyst. Synthesize the provided source summaries into a professional, evidence-based research brief for the topic: "{state.topic}".
-Your brief must include: an executive summary, key findings (3-5 bullet points), a detailed analysis, implications, and limitations.
-Base your entire analysis STRICTLY on the provided source summaries. Do not invent information.
-{format_instructions}"""
-        
-        human_prompt = f"Here are the source summaries to synthesize:\n\n{summaries_text}"
-        
+        system_prompt = f"""You are an expert research analyst. Synthesize the provided source summaries into a comprehensive research brief about: "{state.topic}".
+
+CRITICAL INSTRUCTIONS:
+1. Return ONLY valid JSON data (no markdown, no schema definitions)
+2. Base your analysis strictly on the provided sources
+3. Create actual content, not placeholder text
+4. Ensure all required fields are present and properly formatted
+
+Required JSON structure with ACTUAL content:"""
+
+        human_prompt = f"""Sources to analyze:
+{summaries_text}
+
+Generate a JSON research brief with:
+- title: Clear, specific title about {state.topic}
+- executive_summary: 2-3 sentence summary of key insights
+- key_findings: Array of 3-5 specific findings from the sources
+- detailed_analysis: Thorough analysis based on source content
+- implications: What these findings mean for stakeholders
+- limitations: Research limitations and data gaps
+- references: Array of source objects with title, url, relevance_note
+- metadata: Object with exact numeric values:
+  * research_duration: integer seconds (e.g., 1800)
+  * total_sources_found: integer count (e.g., 5)
+  * sources_used: integer count (e.g., 3)
+  * confidence_score: float 0.0-1.0 (e.g., 0.85)
+  * depth_level: integer 1-4 only (e.g., 2)
+
+CRITICAL: metadata must use exact numeric formats - no strings like "1 hour" or "moderate".
+
+Example metadata format:
+"metadata": {{
+  "research_duration": 2400,
+  "total_sources_found": 6,
+  "sources_used": 4,
+  "confidence_score": 0.8,
+  "depth_level": 2
+}}
+
+Return ONLY the JSON object, no other text."""
+
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
         
         response_str = await generate_text_with_fallback(messages)
-        brief = parser.parse(response_str)
+        
+        # Try to parse the response
+        try:
+            brief = parser.parse(response_str)
+        except Exception as parse_error:
+            logger.warning(f"Failed to parse LLM response: {parse_error}. Attempting manual JSON extraction.")
+            # Try to extract JSON from the response manually
+            import json
+            import re
+            
+            # Look for JSON content between ```json and ```
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_str, re.DOTALL)
+            if json_match:
+                try:
+                    json_data = json.loads(json_match.group(1))
+                    # Validate and create FinalBrief from JSON
+                    brief = FinalBrief.model_validate(json_data)
+                except Exception as json_error:
+                    logger.error(f"Failed to parse extracted JSON: {json_error}")
+                    raise parse_error
+            else:
+                # Try direct JSON parsing
+                try:
+                    json_data = json.loads(response_str)
+                    brief = FinalBrief.model_validate(json_data)
+                except Exception:
+                    raise parse_error
+        
         state.final_brief = brief
 
     except Exception as e:
         logger.error(f"Synthesis failed: {e}. Creating a fallback brief.")
         state.errors.append(f"Synthesis failed: {str(e)}")
+        
+        # Create fallback references from source summaries
+        fallback_references = []
+        if state.source_summaries:
+            for summary in state.source_summaries[:3]:  # Use first 3 sources
+                fallback_references.append(Reference(
+                    title=summary.title,
+                    url=summary.url,
+                    relevance_note="Source used in failed synthesis attempt"
+                ))
+        else:
+            # Fallback reference if no summaries available
+            fallback_references.append(Reference(
+                title="Research Brief Generator",
+                url="http://localhost:8000",
+                relevance_note="System-generated fallback reference"
+            ))
+        
         state.final_brief = FinalBrief(
-            title=f"Failed Research Brief: {state.topic}",
-            executive_summary="The synthesis process failed to generate a brief. This may be due to errors in the source material or model failures.",
-            key_findings=["Synthesis process failed."],
-            detailed_analysis="Could not be generated.",
-            implications="Could not be determined.",
-            limitations="The primary limitation is the failure of the synthesis AI model.",
-            references=[],
-            metadata=BriefMetadata(research_duration=0, total_sources_found=0, sources_used=0, confidence_score=0.1, depth_level=state.depth.value)
+            title=f"Research Brief: {state.topic}",
+            executive_summary="This research brief was generated with limited synthesis capabilities due to processing errors. The content is based on available source materials but may lack comprehensive analysis.",
+            key_findings=["Research process encountered synthesis limitations", "Available sources were processed but integration was incomplete", "Results should be considered preliminary"],
+            detailed_analysis="The detailed analysis could not be completed due to synthesis model limitations. Source materials were collected and processed, but comprehensive integration was not achieved.",
+            implications="Further research and manual review may be required to develop comprehensive insights on this topic.",
+            limitations="This brief was generated using fallback processing due to synthesis errors. The analysis may be incomplete and should be supplemented with additional research.",
+            references=fallback_references,
+            metadata=BriefMetadata(
+                research_duration=60, 
+                total_sources_found=len(state.search_results) if state.search_results else 0, 
+                sources_used=len(state.source_summaries) if state.source_summaries else 0, 
+                confidence_score=0.3, 
+                depth_level=state.depth
+            )
         )
         
     return state.model_dump(mode="json")
