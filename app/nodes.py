@@ -84,8 +84,8 @@ async def planning_node(state: Dict[str, Any]) -> Dict[str, Any]:
         if not llm:
             raise ValueError("Primary LLM (OpenRouter) not available for planning.")
 
-        parser = PydanticOutputParser(pydantic_object=ResearchPlan)
-        format_instructions = parser.get_format_instructions()
+        # Use structured output instead of parsing
+        from langchain_core.output_parsers import PydanticOutputParser
         
         # Enhanced topic-specific search strategy
         topic_lower = state.topic.lower()
