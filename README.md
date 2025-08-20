@@ -627,6 +627,21 @@ Based on 100 test executions:
 
 ---
 
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+**Key Permissions:**
+- ✅ Commercial use
+- ✅ Modification
+- ✅ Distribution
+- ✅ Private use
+
+**Requirements:**
+- 📝 Include license and copyright notice
+- 🚫 No liability or warranty
+
+---
 
 ## 🤝 Contributing
 
