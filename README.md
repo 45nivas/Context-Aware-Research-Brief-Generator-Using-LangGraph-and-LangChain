@@ -1,12 +1,6 @@
 ````markdown
 # 🎯 Context-Aware Research Brief Generator Using LangGraph and LangChain
 
-## 📧 ASSIGNMENT SUBMISSION
-
-**🎓 Course:** Context-Aware Research Brief Generator Assignment  
-**🏆 Points:** 110 Points  
-**📅 Submission Date:** August 20, 2025  
-**👨‍💻 Student:** Lakshmi Nivas (@45nivas)
 
 ### ✅ SUBMISSION EVIDENCE
 
