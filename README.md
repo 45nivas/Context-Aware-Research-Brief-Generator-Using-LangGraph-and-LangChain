@@ -705,7 +705,7 @@ Based on 100 test executions:
 **Lakshmi Nivas**  
 📧 Email: [lakshminivas2025@gmail.com](mailto:lakshminivas2025@gmail.com)  
 🔗 GitHub: [@45nivas](https://github.com/45nivas)  
-🌐 LinkedIn: [Lakshmi Nivas](https://www.linkedin.com/in/lakshmi-nivas/)
+🌐 LinkedIn: [Lakshmi Nivas](https://www.linkedin.com/in/lakshmi-nivas-matta-675813253/)
 
 ---
 
