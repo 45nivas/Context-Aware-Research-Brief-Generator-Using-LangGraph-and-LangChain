@@ -1,10 +1,5 @@
 # 🎯 Context-Aware Research Brief Generator Using LangGraph and LangChain
 
-
-### ✅ SUBMISSION EVIDENCE
-
-**💻 GitHub Repository:** https://github.com/45nivas/Context-Aware-Research-Brief-Generator-Using-LangGraph-and-LangChain  
-
 **🌐 Deployed API URLs:**
 - **Main API:** https://context-aware-research-brief-generator-f2se.onrender.com
 - **Documentation:** https://context-aware-research-brief-generator-f2se.onrender.com/docs  
